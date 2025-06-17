@@ -211,9 +211,77 @@ This is called by the collaborator's editor to save changes.
 
 **🏁 End of Epic 5 Result:** The entire core loop is complete. An author can manage the full lifecycle of feedback from a non-technical collaborator, all within the app.
 
+### **Epic 6: Commenting & Discussion (New Epic)**
+
+**Goal:** To allow collaborators and authors to have threaded conversations attached to specific parts of the document. The entire comment history will be stored directly within the `.qmd` file, making it portable and version-controlled.
+
+**Core Principle:** Comments will be embedded within the `.qmd` file using a custom HTML comment syntax that is invisible to the standard Quarto renderer but can be parsed and displayed by our frontend editor.
+
+#### 1. Proposed Commenting Syntax
+
+*   **Anchor Point:** A self-closing HTML comment is placed directly in the text to mark where a comment thread begins.
+    ```markdown
+    This is a paragraph with some important text that needs discussion.<!-- quillarto-comment-anchor id="uuid-123-abc" -->
+    ```
+*   **Data Store:** A single, large HTML comment block at the very end of the `.qmd` file will contain a JSON object with all the comment data. This keeps the main text clean.
+    ```markdown
+    <!--
+    quillarto-metadata:
+    {
+      "comments": {
+        "uuid-123-abc": {
+          "resolved": false,
+          "thread": [
+            { "author": "Prof. Smith", "timestamp": "2023-10-28T10:00:00Z", "text": "Are we sure about this claim?" },
+            { "author": "Anya Sharma", "timestamp": "2023-10-28T11:30:00Z", "text": "Good point, I will double-check the reference." }
+          ]
+        },
+        "uuid-456-def": { ... }
+      }
+    }
+    -->
+    ```
+
+#### 2. Backend Tasks
+
+*   **Task 6.1: Refine the Document Serializer:**
+    *   The backend's "ProseMirror-to-QMD" serializer (to be built in Epic 4) must be aware of the comment data.
+    *   When saving, it will take the comment data (managed by the frontend) and serialize it into the JSON block at the end of the file. It will also ensure the `<!-- quillarto-comment-anchor ... -->` tags are correctly placed in the text.
+
+*   **Task 6.2: Refine the Document Parser:**
+    *   The backend's "QMD-to-ProseMirror" parser (`astParser.js`) must be taught to extract the comment data.
+    *   It will find the `quillarto-metadata` block, parse the JSON, and attach the `comments` object to the top-level ProseMirror document node's `attrs`.
+
+#### 3. Frontend Tasks
+
+*   **Task 6.3: Update TipTap Schema:**
+    *   Create a new custom inline TipTap node called `commentAnchor`.
+    *   This node will be "zero-width" and non-editable in the main text flow. Its purpose is purely to be a marker.
+
+*   **Task 6.4: Create the Commenting UI:**
+    *   Create a `CommentSidebar.jsx` React component.
+    *   This component will receive the `comments` object from the editor's document attributes.
+    *   It will render a list of all comment threads.
+
+*   **Task 6.5: Implement Comment Rendering & Interaction:**
+    *   Create a custom TipTap "Decoration" that finds all `commentAnchor` nodes in the document.
+    *   For each anchor, it will render a small, clickable comment icon in the page's margin.
+    *   Clicking on text in the editor that has a comment should highlight the corresponding thread in the sidebar.
+    *   Clicking on a comment thread in the sidebar should scroll the editor to the corresponding anchor point in the text.
+
+*   **Task 6.6: Implement Comment Creation & Replying:**
+    *   When a user highlights text, a small "Add Comment" button should appear.
+    *   Clicking it will:
+        a. Insert a new `commentAnchor` node into the TipTap document.
+        b. Generate a new UUID for the comment.
+        c. Open a new comment input box in the sidebar.
+        d. Add the new comment data to the central `comments` state object.
+    *   The UI will allow users to reply to threads and mark them as "resolved," which will update the state object.
+
+**🏁 End of Epic 6 Result:** A user can highlight any piece of text, add a comment, and engage in a threaded discussion. The comments appear cleanly in the margin. When the document is saved, all comments are stored inside the `.qmd` file itself, creating a fully self-contained, version-controlled document with both content and context.
+
 ### Future Epics (Post-V1)
 
-*   **Epic 6: The Commenting System:** Implement the full commenting UI and backend logic.
 *   **Epic 7: Granular Accept/Reject:** Move beyond "Merge All" to allowing authors to accept/reject individual changes.
 *   **Epic 8: Polishing & UX:** Improve loading states, error handling, caching, and overall user experience.
 *   **Epic 9: Production Hardening:** Re-introduce Docker for sandboxing `quarto render` calls for a secure, public-facing deployment.

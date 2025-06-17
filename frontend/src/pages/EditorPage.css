@@ -1,0 +1,54 @@
+/* The main container for the entire editor view */
+.editor-page-container {
+    background-color: #fff; /* A clean white background */
+  }
+  
+  /* A full-width header bar for controls, with a subtle bottom border */
+  .editor-header {
+    padding: 1rem 2rem;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky; /* Makes the header stick to the top as you scroll */
+    top: 0;
+    background-color: #fff;
+    z-index: 10; /* Ensures it stays above the content */
+  }
+  
+  /* The main content area that holds the editor */
+  .editor-content-area {
+    /* This creates our main column and the side margins */
+    max-width: 800px; /* The ideal reading width for the text */
+    margin: 0 auto; /* This centers the column on the page */
+    padding: 2rem 1.5rem; /* Vertical and horizontal padding */
+  }
+  
+  /* This is the direct parent of the TipTap editor content */
+  /* We need to style it to look like a document */
+  .ProseMirror {
+    outline: none; /* Removes the default focus outline */
+    line-height: 1.7;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size: 18px; /* A slightly larger, more readable font size */
+    color: #1a1a1a;
+  }
+  
+  /* Add some spacing and styling for common elements inside the editor */
+  .ProseMirror h1,
+  .ProseMirror h2,
+  .ProseMirror h3 {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+  }
+  
+  .ProseMirror p {
+    margin: 0;
+  }
+  
+  .ProseMirror p + p {
+    margin-top: 1.2em; /* Add space between paragraphs */
+  }

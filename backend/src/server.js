@@ -72,6 +72,8 @@ app.listen(PORT, () => {
 
 // --- API Routes ---
 const docRoutes = require('./api/docs.routes');
+const assetRoutes = require('./api/assets.routes');
 
 app.use('/api/repos', repoRoutes);
 app.use('/api/docs', docRoutes);
+app.use('/api/assets', assetRoutes);

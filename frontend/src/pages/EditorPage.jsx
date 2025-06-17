@@ -1,55 +1,45 @@
-import React, { useState } from 'react'; // Add useState
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 
 import QuartoBlock from '../components/editor/QuartoBlock';
 import { dummyProseMirrorDoc } from '../dummy-data/dummyDoc';
+import './EditorPage.css'; // Import our updated CSS
 
 function EditorPage() {
   const navigate = useNavigate();
-  const [status, setStatus] = useState('Unsaved'); // To show save status
+  const [status, setStatus] = useState('Saved');
 
   const editor = useEditor({
     extensions: [StarterKit, QuartoBlock],
     content: dummyProseMirrorDoc,
     editable: true,
-    // Add an event handler that fires on every change
-    onUpdate: ({ editor }) => {
+    onUpdate: () => {
       setStatus('Unsaved');
     },
   });
 
   const handleSave = () => {
-    // Get the latest document state as JSON
     const currentJson = editor.getJSON();
-    
-    // In a real app, we would POST this JSON to our backend
-    console.log("--- Saving Document ---");
-    console.log(JSON.stringify(currentJson, null, 2)); // Pretty-print the JSON
-    console.log("-----------------------");
-
+    console.log("Saving Document:", JSON.stringify(currentJson, null, 2));
     setStatus('Saved!');
-    setTimeout(() => setStatus(''), 2000); // Clear status after 2 seconds
+    setTimeout(() => setStatus('Saved'), 2000);
   };
-  
-  const documentTitle = editor?.getHTML().includes('<h1>') 
-    ? editor.state.doc.firstChild.textContent 
-    : 'Untitled Document';
 
   return (
-    <div style={{ maxWidth: '800px', margin: '2rem auto', padding: '0 1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="editor-page-container">
+      <header className="editor-header">
         <button onClick={() => navigate('/dashboard')}>← Back to Dashboard</button>
         <div>
           <span>Status: {status}</span>
           <button onClick={handleSave} style={{ marginLeft: '1rem' }}>Save</button>
         </div>
-      </div>
-      <h1 style={{ marginTop: '1rem', borderBottom: '1px solid #ccc', paddingBottom: '0.5rem' }}>
-        {documentTitle}
-      </h1>
-      <EditorContent editor={editor} />
+      </header>
+
+      <main className="editor-content-area">
+        <EditorContent editor={editor} />
+      </main>
     </div>
   );
 }
