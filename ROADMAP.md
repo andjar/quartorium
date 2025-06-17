@@ -35,19 +35,61 @@
 
 **🏁 End of Epic 2 Result:** A user can add their project repository and see "paper1/manuscript.qmd" listed in the UI, ready to be edited.
 
-### Epic 3: The Read-Only Editor (The Core Viewer)
+### **Epic 3 Specification: The Read-Only Editor (Render-to-JSON-AST Architecture)**
 
-**Goal:** Clicking a `.qmd` file opens a new page that displays a fully rendered, read-only version of the document. This is the most technically challenging epic.
+**Goal:** Clicking a `.qmd` file opens a new page that displays a fully rendered, high-fidelity, read-only version of the document. This will be achieved by leveraging Quarto's native JSON Abstract Syntax Tree (AST) output for maximum fidelity, performance, and reliability.
 
-*   **Task 3.1 (Backend):** Create the core `quarto.parser.js` module. Implement the logic to parse a `.qmd` file string into a structured object (separating YAML, text, and code chunks).
-*   **Task 3.2 (Backend):** Create the `quarto.runner.js` module. Implement a function that takes a single code chunk and its options, writes it to a temporary file, and runs `quarto render` to get the HTML output. **Crucially, start without sandboxing for simplicity, but add a large warning comment about the security risk.**
-*   **Task 3.3 (Backend):** Integrate the parser and runner. Create a new `/api/docs/:docId/view` endpoint that reads the `.qmd` file from the cloned repo, parses it, renders each code chunk, and returns a single ProseMirror-compatible JSON object representing the document.
-*   **Task 3.4 (Frontend):** Install `tiptap` and its related libraries (`@tiptap/react`, `@tiptap/starter-kit`).
-*   **Task 3.5 (Frontend):** Create the custom TipTap extension (`QuartoBlock.js`) and the React Node View (`QuartoBlockNodeView.jsx`) to render the non-editable code chunk outputs.
-*   **Task 3.6 (Frontend):** Create the main `EditorPage.jsx`. When it loads, it should call the `/api/docs/:docId/view` endpoint.
-*   **Task 3.7 (Frontend):** Initialize a TipTap editor instance on the `EditorPage.jsx`, passing the fetched JSON content to it. The editor should be set to `editable: false`.
+**Core Principle:** We will instruct Quarto to run all code and output the entire document's structure as a single, machine-readable JSON file (a Pandoc AST). We will then transform this "perfect" representation into the ProseMirror JSON format required by our frontend editor. This eliminates all manual parsing of intermediate files and brittle ID-injection hacks.
 
-**🏁 End of Epic 3 Result:** A user can click on `manuscript.qmd` and see a beautiful, read-only preview of their paper inside the browser, with all plots and tables correctly rendered.
+#### 1. Backend Tasks
+
+**Task 3.1: Create the Definitive Core Parser Module (`astParser.js`)**
+This single new module will replace all previous parser/runner concepts.
+
+*   **Sub-task 3.1.1: Quarto Execution:**
+    *   Create a function `renderToAST(qmdFilepath, projectDir)`.
+    *   It will execute a single, powerful command in the `projectDir`: `quarto render [qmdFilepath] --to json`.
+    *   This command runs all code, generates all assets (like plots), and prints a massive JSON string to standard output.
+    *   The function will capture this standard output, parse it using `JSON.parse()`, and return the resulting Pandoc AST object.
+
+*   **Sub-task 3.1.2: AST Transformation:**
+    *   Create the main function `pandocAST_to_proseMirrorJSON(pandocAST)`.
+    *   This function's sole responsibility is to "walk" the Pandoc AST and convert its structure into the ProseMirror JSON format.
+    *   It will contain a recursive transformer that handles different Pandoc node types:
+        *   `Header` node -> ProseMirror `heading` node.
+        *   `Para` node -> ProseMirror `paragraph` node.
+        *   `BulletList` / `OrderedList` -> ProseMirror `bulletList` / `orderedList` nodes.
+        *   Text nodes with marks (`Strong`, `Emph`) -> ProseMirror `text` nodes with `bold`/`italic` marks.
+        *   **`CodeBlock` node:** This is the key. When a `CodeBlock` with Quarto attributes is found, the transformer will:
+            a. Extract its attributes (chunk options like `{r, label='...'}`).
+            b. Extract its source code.
+            c. Look at the `outputs` property directly within the `CodeBlock` node in the AST. This property is added by Quarto and contains the rendered result (e.g., an `Image` node with a path to the plot, or a `Table` node).
+            d. Convert the output into the required HTML for the `htmlOutput` attribute of our custom `quartoBlock`. For images, this will involve creating an `<img>` tag pointing to a new API endpoint that serves the static asset from the render cache.
+            e. Create a single ProseMirror `quartoBlock` node containing all this information.
+
+**Task 3.2: Create a Static Asset Server Endpoint**
+*   When Quarto renders, it creates image files in a folder (e.g., `document_files/figure-html/`).
+*   The Pandoc AST will contain relative paths to these images.
+*   We need a new public API endpoint, e.g., `GET /api/assets/:repoId/:filepath`, that can securely serve these static image files to the frontend editor. The `pandocAST_to_proseMirrorJSON` function will rewrite image `src` attributes to point to this endpoint.
+
+**Task 3.3: Update the Document View Endpoint (`docs.routes.js`)**
+*   The `GET /api/docs/view` endpoint will be refactored to be much simpler.
+*   It will call `renderToAST` to get the Pandoc JSON.
+*   It will then call `pandocAST_to_proseMirrorJSON` to transform it.
+*   It will return the resulting ProseMirror JSON to the frontend.
+
+**Task 3.4: Install New Backend Dependencies**
+*   No major new dependencies are needed for this approach. We are simplifying and removing dependencies like `remark-gfm` and `uuid`. We are simply using the built-in `child_process` and `JSON.parse`.
+
+#### 2. Frontend Tasks (Unchanged)
+
+This architecture is a pure backend improvement. The contract with the frontend remains the same.
+
+*   **Task 3.5 (No Change):** The `EditorPage.jsx` component still expects a valid ProseMirror JSON object from the API.
+*   **Task 3.6 (No Change):** The custom `QuartoBlock.js` and `QuartoBlockNodeView.jsx` components will render the `htmlOutput` provided by the backend, just as before.
+*   **Task 3.7 (No Change):** The routing and linking from the dashboard to the editor page remain the same.
+
+**🏁 End of Epic 3 Result:** A user can click on a `.qmd` file and see a fast, pixel-perfect, read-only preview of their paper. The architecture is now built on Quarto's most fundamental and stable output format, ensuring long-term reliability and performance. All future features are now built on rock-solid ground.
 
 ### Epic 4 Specification: The Collaborative Editing Workflow
 

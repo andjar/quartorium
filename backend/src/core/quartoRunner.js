@@ -16,7 +16,13 @@ async function renderChunk(code, chunkOptions) {
   const tempHtmlPath = path.join(tempDir, 'temp.html');
 
   try {
-    const qmdContent = `---`
+    const qmdContent = `---
+title: "Chunk Render"
+format: html
+---
+
+\`\`\`{${chunkOptions}}\n${code}\n\`\`\`
+`;
 
     await fs.writeFile(tempQmdPath, qmdContent);
 

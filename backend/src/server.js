@@ -35,7 +35,7 @@ app.use(passport.session());
 const repoRoutes = require('./api/repos.routes');
 
 // --- Authentication Routes ---
-app.get('/api/auth/github', passport.authenticate('github', { scope: ['user:email', 'repo'] }));
+app.get('/api/auth/github', passport.authenticate('github'));
 
 app.get(
   '/api/auth/github/callback',

@@ -1,6 +1,6 @@
 const matter = require('gray-matter');
 const { unified } = require('unified');
-const remarkParse = require('remark-parse');
+const remarkParse = require('remark-parse').default; 
 const { renderChunk } = require('./quartoRunner');
 
 async function qmdToProseMirror(qmdString) {
