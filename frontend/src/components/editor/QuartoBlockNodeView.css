@@ -1,0 +1,21 @@
+.quarto-block {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin: 1rem 0;
+    background-color: #f9f9f9;
+    overflow: hidden;
+  }
+  
+  .quarto-block-header {
+    background-color: #eee;
+    padding: 4px 8px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #555;
+  }
+  
+  .quarto-block-output {
+    padding: 1rem;
+    /* This is important for plots and tables to render correctly */
+    overflow-x: auto;
+  }

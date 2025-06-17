@@ -71,4 +71,7 @@ app.listen(PORT, () => {
 });
 
 // --- API Routes ---
+const docRoutes = require('./api/docs.routes');
+
 app.use('/api/repos', repoRoutes);
+app.use('/api/docs', docRoutes);

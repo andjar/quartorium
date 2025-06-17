@@ -7,7 +7,8 @@ const fs = require('fs');
 const path = require('path');
 
 const router = express.Router();
-const REPOS_DIR = path.join(__dirname, '../../repos'); // A directory to store cloned repos
+// Create a directory to store cloned repos
+const REPOS_DIR = path.join(__dirname, '../../repos');
 
 if (!fs.existsSync(REPOS_DIR)) {
   fs.mkdirSync(REPOS_DIR, { recursive: true });
@@ -36,8 +37,8 @@ router.post('/', async (req, res) => {
 
   try {
     const url = new URL(repo_url);
-    if (url.hostname !== 'github.com') throw new Error();
-    const full_name = url.pathname.slice(1).replace('.git', '');
+    if (url.hostname !== 'github.com') throw new Error('Not a GitHub URL');
+    const full_name = url.pathname.slice(1).replace(/\.git$/, '');
 
     // Use user's token to fetch repo details from GitHub API
     const githubResponse = await axios.get(`https://api.github.com/repos/${full_name}`, {
@@ -53,6 +54,7 @@ router.post('/', async (req, res) => {
       res.status(201).json({ id: this.lastID, name, full_name });
     });
   } catch (error) {
+    console.error("Error adding repo:", error.message);
     res.status(404).json({ error: 'Repository not found or you do not have access.' });
   }
 });
@@ -67,21 +69,25 @@ router.get('/:repoId/qmd-files', async (req, res) => {
     const url = `https://github.com/${repo.full_name}.git`;
 
     try {
-      // Clone or pull the latest changes
-      await git.clone({ fs, http, dir, url, singleBranch: true, depth: 1 });
+      // Clone or pull the latest changes. `isomorphic-git` handles this idempotently.
+      // We'll clone into a directory named after the repo's full name to avoid collisions.
+      await git.clone({ fs, http, dir, url, singleBranch: true, depth: 1, corsProxy: 'https://cors.isomorphic-git.org' });
       console.log(`Cloned or updated ${repo.full_name}`);
 
       // Recursively find all .qmd files
       const findQmdFiles = (startPath) => {
         let results = [];
+        if (!fs.existsSync(startPath)) return results;
         const files = fs.readdirSync(startPath);
         for (const file of files) {
           const filename = path.join(startPath, file);
+          if (file === '.git') continue; // Skip the .git directory
           const stat = fs.lstatSync(filename);
-          if (stat.isDirectory() && file !== '.git') {
+          if (stat.isDirectory()) {
             results = results.concat(findQmdFiles(filename));
           } else if (filename.endsWith('.qmd')) {
-            results.push(path.relative(dir, filename));
+            // Return a path relative to the repo root
+            results.push(path.relative(dir, filename).replace(/\\/g, '/'));
           }
         }
         return results;
