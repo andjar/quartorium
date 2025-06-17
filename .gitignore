@@ -44,8 +44,8 @@ Thumbs.db
 # The SQLite database file
 # You don't want to version control the database itself, just the
 # schema/migration files that create it.
-backend/quillarto.db
-backend/quillarto.db-journal
+backend/src/db/quillarto.db
+backend/src/db/quillarto.db-journal
 
 # Temporary directories for cloned git repos (we'll create this later)
 backend/repos/
