@@ -1,7 +1,8 @@
 const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
 
-// Use a file-based database; it will be created if it doesn't exist.
-const DB_SOURCE = 'quillarto.db';
+// Use a file-based database in the db folder; it will be created if it doesn't exist.
+const DB_SOURCE = path.join(__dirname, 'quillarto.db');
 
 const db = new sqlite3.Database(DB_SOURCE, (err) => {
   if (err) {
