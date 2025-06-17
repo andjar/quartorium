@@ -1,8 +1,8 @@
-# Quillarto ✒️
+# Quartorium ✒️
 
 **A collaborative WYSIWYG editor for Quarto, bridging the gap between reproducible research and seamless teamwork.**
 
-Quillarto allows technical authors to share their Quarto (`.qmd`) documents with non-technical collaborators through a simple, clean, Word-like interface. Collaborators can edit prose and add comments without ever seeing code, while authors can review these changes and merge them back into a version-controlled Git workflow.
+Quartorium allows technical authors to share their Quarto (`.qmd`) documents with non-technical collaborators through a simple, clean, Word-like interface. Collaborators can edit prose and add comments without ever seeing code, while authors can review these changes and merge them back into a version-controlled Git workflow.
 
 ## ✨ Core Features
 
@@ -21,7 +21,7 @@ Quillarto allows technical authors to share their Quarto (`.qmd`) documents with
 
 ## 🏁 Getting Started
 
-Follow these instructions to get Quillarto running on your local machine for development and testing.
+Follow these instructions to get Quartorium running on your local machine for development and testing.
 
 ### Prerequisites
 
@@ -34,8 +34,8 @@ You must have the following tools installed directly on your system:
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-username/quillarto.git
-    cd quillarto
+    git clone https://github.com/andjar/quartorium.git
+    cd quartorium
     ```
 
 2.  **Install all dependencies:**
