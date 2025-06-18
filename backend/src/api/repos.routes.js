@@ -77,35 +77,38 @@ router.post('/', async (req, res) => {
 // GET /api/repos/:repoId/qmd-files - List .qmd files in a repo
 router.get('/:repoId/qmd-files', async (req, res) => {
   db.get('SELECT * FROM repositories WHERE id = ? AND user_id = ?', [req.params.repoId, req.user.id], async (err, repo) => {
-    if (err) {
-      console.error('DB error finding repo:', err);
-      return res.status(500).json({ error: err.message });
-    }
-    if (!repo) {
-      return res.status(404).json({ error: 'Repository not found' });
-    }
+    if (err) return res.status(500).json({ error: err.message });
+    if (!repo) return res.status(404).json({ error: 'Repository not found' });
 
-    const dir = path.join(REPOS_DIR, repo.full_name);
+    // --- FIX: DEFINE THE DIRECTORY PATHS FIRST ---
+    const projectDir = path.join(REPOS_DIR, repo.full_name);
     const url = `https://github.com/${repo.full_name}.git`;
+    // --- END OF FIX ---
 
     try {
-      // Clone or pull the latest changes.
-      // The `onAuth` callback provides the user's token for private repos.
+      // Clone will do nothing if the repo already exists
       await git.clone({
         fs,
         http,
-        dir,
+        dir: projectDir, // Use projectDir
         url,
         singleBranch: true,
         depth: 1,
-        onAuth: () => ({
-          username: req.user.github_token, // For GitHub, the token is used as the username
-          password: '' // Password can be empty when using a token
-        }),
+        onAuth: () => ({ username: req.user.github_token }),
       });
-      console.log(`Successfully cloned or updated ${repo.full_name}`);
 
-      // Recursively find all .qmd files in the cloned directory
+      // Now, pull the latest changes from the main branch
+      await git.pull({
+        fs,
+        http,
+        dir: projectDir, // Use projectDir
+        ref: repo.main_branch || 'main',
+        singleBranch: true,
+        author: { name: 'Quartorium Fetcher' }, // Author is required for pull
+      });
+      console.log(`Pulled latest changes for ${repo.full_name}`);
+
+      // Recursively find all .qmd files
       const findQmdFiles = (startPath) => {
         let results = [];
         if (!fs.existsSync(startPath)) return results;
@@ -113,20 +116,19 @@ router.get('/:repoId/qmd-files', async (req, res) => {
         const files = fs.readdirSync(startPath);
         for (const file of files) {
           const filename = path.join(startPath, file);
-          if (file === '.git') continue; // Skip the git metadata directory
+          if (file === '.git') continue;
           
           const stat = fs.lstatSync(filename);
           if (stat.isDirectory()) {
             results = results.concat(findQmdFiles(filename));
           } else if (filename.endsWith('.qmd')) {
-            // Return a path relative to the repo root, with normalized slashes
-            results.push(path.relative(dir, filename).replace(/\\/g, '/'));
+            results.push(path.relative(projectDir, filename).replace(/\\/g, '/'));
           }
         }
         return results;
       };
 
-      const qmdFiles = findQmdFiles(dir);
+      const qmdFiles = findQmdFiles(projectDir);
       res.json(qmdFiles);
     } catch (error) {
       console.error('Git operation failed:', error);

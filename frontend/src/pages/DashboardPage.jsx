@@ -13,8 +13,21 @@ function DashboardPage() {
   const [error, setError] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
-  const [sharingFile, setSharingFile] = useState(null); // { repoId, filepath }
   const navigate = useNavigate();
+
+  const [sharingFile, setSharingFile] = useState(null);
+
+  const openShareModal = async (repoId, filepath) => {
+      // Call our new endpoint to get the document ID
+      const res = await fetch('/api/docs/get-or-create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ repoId, filepath }),
+      });
+      const doc = await res.json();
+      setSharingFile({ docId: doc.id, filepath, repoId });
+  };
 
   const fetchRepos = useCallback(() => {
     fetch('/api/repos', { credentials: 'include' })
@@ -127,8 +140,8 @@ function DashboardPage() {
                         <Link to={`/editor?repoId=${selectedRepo.id}&filepath=${encodeURIComponent(file)}`}>
                           {file}
                         </Link>
-                        <button onClick={() => setSharingFile({ repoId: selectedRepo.id, filepath: file })}>
-                          Share
+                        <button onClick={() => openShareModal(selectedRepo.id, file)}>
+                            Share
                         </button>
                       </li>
                     ))}
@@ -143,11 +156,12 @@ function DashboardPage() {
         </div>
       </main>
       {sharingFile && (
-        <ShareModal 
-          repoId={sharingFile.repoId} 
-          filepath={sharingFile.filepath} 
-          onClose={() => setSharingFile(null)} 
-        />
+          <ShareModal 
+            docId={sharingFile.docId} 
+            docFilepath={sharingFile.filepath} 
+            repoId={sharingFile.repoId} 
+            onClose={() => setSharingFile(null)} 
+          />
       )}
     </div>
   );

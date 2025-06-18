@@ -5,7 +5,8 @@ const git = require('isomorphic-git');
 const http = require('isomorphic-git/http/node');
 const fs = require('fs/promises');
 const { v4: uuidv4 } = require('uuid');
-const { renderToAST, pandocAST_to_proseMirrorJSON } = require('../core/astParser'); // Assuming astParser.js exists
+const { renderToAST, pandocAST_to_proseMirrorJSON } = require('../core/astParser');
+const Diff = require('diff');
 
 const router = express.Router();
 const REPOS_DIR = path.join(__dirname, '../../repos');
@@ -106,6 +107,134 @@ router.post('/share', async (req, res) => {
     console.error('Error creating share link:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// GET /api/docs/diff/:shareLinkId - Get a diff of a collaboration branch
+router.get('/diff/:shareLinkId', async (req, res) => {
+  const { shareLinkId } = req.params;
+
+  try {
+    // 1. Get all the necessary info for the two branches
+    const linkInfo = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT 
+          s.collab_branch_name, 
+          d.filepath, 
+          r.full_name,
+          r.main_branch -- Assuming you have a main_branch column in your repos table
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.id = ?
+      `;
+      db.get(sql, [shareLinkId], (err, row) => {
+        if (err || !row) return reject(new Error('Share link not found.'));
+        resolve(row);
+      });
+    });
+
+    const projectDir = path.join(REPOS_DIR, linkInfo.full_name);
+    const mainBranch = linkInfo.main_branch || 'main'; // Default to 'main'
+
+    // 2. Get content from the main branch
+    await git.checkout({ fs, dir: projectDir, ref: mainBranch });
+    const mainContent = await fs.readFile(path.join(projectDir, linkInfo.filepath), 'utf8');
+
+    // 3. Get content from the collaboration branch
+    await git.checkout({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
+    const collabContent = await fs.readFile(path.join(projectDir, linkInfo.filepath), 'utf8');
+    
+    // 4. Generate the diff
+    const diff = Diff.diffLines(mainContent, collabContent);
+
+    res.json({
+      mainContent,
+      collabContent,
+      diff,
+      branchName: linkInfo.collab_branch_name
+    });
+
+  } catch (error) {
+    console.error('Error generating diff:', error);
+    res.status(500).json({ error: 'Failed to generate diff.' });
+  }
+});
+
+// POST /api/collab/:shareToken - Save changes from a collaborator
+router.post('/:shareToken', async (req, res) => {
+  const { shareToken } = req.params;
+  const proseMirrorDoc = req.body; // The JSON from the editor
+
+  if (!proseMirrorDoc || !proseMirrorDoc.type) {
+      return res.status(400).json({ error: 'Invalid document format received.' });
+  }
+
+  try {
+    // 1. Find the share link and associated document/repo info
+    const linkInfo = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT s.collab_branch_name, d.filepath, r.full_name 
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.share_token = ?
+      `;
+      db.get(sql, [shareToken], (err, row) => {
+        if (err || !row) return reject(new Error('Invalid share link.'));
+        resolve(row);
+      });
+    });
+
+    // 2. Serialize the ProseMirror JSON back into a .qmd string
+    const newQmdContent = proseMirrorJSON_to_qmd(proseMirrorDoc);
+
+    // 3. Write the new content to the file and commit it to the collaboration branch
+    const projectDir = path.join(REPOS_DIR, linkInfo.full_name);
+    const fullFilepath = path.join(projectDir, linkInfo.filepath);
+
+    await git.checkout({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
+    await fs.writeFile(fullFilepath, newQmdContent);
+    
+    await git.add({ fs, dir: projectDir, filepath: linkInfo.filepath });
+
+    await git.commit({
+      fs,
+      dir: projectDir,
+      message: 'Update from collaborator via Quartorium',
+      author: {
+        name: 'Quartorium Collaborator',
+        email: 'collaborator@quartorium.app',
+      },
+    });
+
+    console.log(`Changes committed to branch: ${linkInfo.collab_branch_name}`);
+    // Return a successful status
+    res.status(200).json({ status: 'saved' });
+
+  } catch (error) {
+    console.error('Error saving collab doc:', error);
+    res.status(500).json({ error: 'Failed to save changes.' });
+  }
+});
+
+// POST /api/docs/get-or-create - Finds a doc or creates it, returns the ID
+router.post('/get-or-create', async (req, res) => {
+  const { repoId, filepath } = req.body;
+  try {
+    let doc = await new Promise((resolve) => {
+        db.get('SELECT * FROM documents WHERE repo_id = ? AND filepath = ?', [repoId, filepath], (err, row) => resolve(row));
+    });
+    if (!doc) {
+        const result = await new Promise((resolve, reject) => {
+            db.run('INSERT INTO documents (repo_id, filepath) VALUES (?, ?)', [repoId, filepath], function(err) {
+                if(err) return reject(err);
+                resolve({ id: this.lastID });
+            });
+        });
+        doc = { id: result.id };
+    }
+    res.json(doc);
+  } catch(e) { res.status(500).json({error: e.message})}
 });
 
 // TODO: Add GET /api/docs/:docId/shares

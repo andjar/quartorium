@@ -3,6 +3,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import EditorPage from './pages/EditorPage';
 import CollabEditorPage from './pages/CollabEditorPage';
+import ReviewPage from './pages/ReviewPage';
 import './App.css';
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/editor" element={<EditorPage />} />
           <Route path="/collab/:shareToken" element={<CollabEditorPage />} />
+          <Route path="/review/:shareLinkId" element={<ReviewPage />} />
         </Routes>
       </div>
     </BrowserRouter>
