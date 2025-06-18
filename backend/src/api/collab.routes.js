@@ -4,7 +4,7 @@ const path = require('path');
 const git = require('isomorphic-git');
 const http = require('isomorphic-git/http/node');
 const fs = require('fs/promises');
-const { renderToAST, pandocAST_to_proseMirrorJSON } = require('../core/astParser');
+const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser');
 // Import our new serializer
 const { proseMirrorJSON_to_qmd } = require('../core/astSerializer');
 
@@ -37,8 +37,8 @@ router.get('/:shareToken', async (req, res) => {
 
     // 3. Render the document from that branch
     const fullFilepath = path.join(projectDir, linkInfo.filepath);
-    const { ast } = await renderToAST(fullFilepath, projectDir);
-    const proseMirrorJson = pandocAST_to_proseMirrorJSON(ast, linkInfo.repoId);
+    const { jatsXml } = await renderToJATS(fullFilepath, projectDir);
+    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, linkInfo.repoId);
     
     res.json(proseMirrorJson);
 

@@ -5,8 +5,9 @@ const git = require('isomorphic-git');
 const http = require('isomorphic-git/http/node');
 const fs = require('fs/promises');
 const { v4: uuidv4 } = require('uuid');
-const { renderToAST, pandocAST_to_proseMirrorJSON } = require('../core/astParser');
+const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser');
 const Diff = require('diff');
+const { ensureAuthenticated } = require('../core/auth');
 
 const router = express.Router();
 const REPOS_DIR = path.join(__dirname, '../../repos');
@@ -88,11 +89,11 @@ router.get('/view', async (req, res) => {
       return res.status(404).json({ error: `File not found: ${effectiveFilepath}` });
     }
 
-    // Render the document to a Pandoc AST
-    const { ast } = await renderToAST(fullFilepath, projectDir);
+    // Render the document to JATS
+    const { jatsXml } = await renderToJATS(fullFilepath, projectDir);
     
-    // Transform the Pandoc AST to ProseMirror JSON
-    const proseMirrorJson = pandocAST_to_proseMirrorJSON(ast, effectiveRepoId);
+    // Transform the JATS to ProseMirror JSON
+    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, effectiveRepoId);
     
     res.json(proseMirrorJson);
 
