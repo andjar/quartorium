@@ -293,7 +293,30 @@ router.post('/get-or-create', async (req, res) => {
   } catch(e) { res.status(500).json({error: e.message})}
 });
 
-// TODO: Add GET /api/docs/:docId/shares
+// GET /api/docs/:docId/shares - Retrieve all share links for a document
+router.get('/:docId/shares', async (req, res) => {
+  const { docId } = req.params;
+
+  try {
+    const links = await new Promise((resolve, reject) => {
+      const sql = 'SELECT id, share_token, collaborator_label, created_at FROM share_links WHERE doc_id = ? ORDER BY created_at DESC';
+      db.all(sql, [docId], (err, rows) => {
+        if (err) {
+          console.error('Database error fetching share links:', err);
+          return reject(new Error('Failed to retrieve share links.'));
+        }
+        resolve(rows);
+      });
+    });
+
+    res.json(links); // Will return empty array if no links found, which is desired
+
+  } catch (error) {
+    console.error('Error getting share links for doc:', docId, error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // TODO: Add collaborator-facing endpoints (GET/POST /api/collab/:shareToken)
 
 module.exports = router;

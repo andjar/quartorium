@@ -37,6 +37,8 @@ format: html
       });
     });
 
+    console.log('--- [DEBUG] Temp dir for rendering: ', tempDir);
+
     const htmlOutput = await fs.readFile(tempHtmlPath, 'utf8');
     
     // A simple way to extract just the output div from the rendered HTML body

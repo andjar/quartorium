@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const db = require('../db/sqlite'); // Use the shared db connection
 
 const router = express.Router();
 const REPOS_DIR = path.join(__dirname, '../../repos');
@@ -20,27 +21,28 @@ router.get('/:repoId/:assetPath(*)', (req, res) => {
   // A better security model would involve checking a session or token,
   // but for now, we rely on the obscurity of the asset path.
 
-  // We need to find the repo's full_name from its ID to construct the path.
-  // This is a simplification; in a real app, you'd query the DB.
-  // For now, we'll just scan the repos dir. This is NOT performant.
-  // TODO: Replace this with a DB lookup.
-  const repoName = fs.readdirSync(REPOS_DIR).find(dir => fs.statSync(path.join(REPOS_DIR, dir)).isDirectory());
-  if (!repoName) {
-      return res.status(404).send('Repo directory not found.');
-  }
-  
-  const fullAssetPath = path.join(REPOS_DIR, repoName, `${path.parse(assetPath).name}_files`, assetPath);
-
-  // Basic path traversal protection
-  const safePath = path.resolve(fullAssetPath);
-  if (!safePath.startsWith(path.resolve(REPOS_DIR))) {
-    return res.status(403).send('Forbidden');
-  }
-
-  res.sendFile(safePath, (err) => {
-    if (err) {
-      res.status(404).send('Asset not found');
+  // Look up the repository's full_name from its ID
+  db.get('SELECT full_name FROM repositories WHERE id = ?', [repoId], (err, row) => {
+    if (err || !row) {
+      return res.status(404).send('Repository not found');
     }
+    
+    const repoFullName = row.full_name;
+    
+    // Construct the asset path using the repository's full name
+    const fullAssetPath = path.join(REPOS_DIR, repoFullName, assetPath);
+
+    // Basic path traversal protection
+    const safePath = path.resolve(fullAssetPath);
+    if (!safePath.startsWith(path.resolve(REPOS_DIR))) {
+      return res.status(403).send('Forbidden');
+    }
+
+    res.sendFile(safePath, (err) => {
+      if (err) {
+        res.status(404).send('Asset not found');
+      }
+    });
   });
 });
 
