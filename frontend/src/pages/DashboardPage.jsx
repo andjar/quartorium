@@ -77,7 +77,7 @@ function DashboardPage() {
   return (
     <div>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderBottom: '1px solid #eee' }}>
-        <h2>Quillarto</h2>
+        <h2>Quartorium</h2>
         {user && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <span>Welcome, {user.username}!</span>

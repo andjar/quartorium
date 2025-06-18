@@ -1,4 +1,4 @@
-### Quillarto: Iterative Development Roadmap
+### Quartorium: Iterative Development Roadmap
 
 **Guiding Principle:** Each epic should result in a demonstrable new capability for the application. We prioritize the core user journey first: Author connects repo -> Collaborator edits -> Author reviews.
 
@@ -19,7 +19,7 @@
 
 ### Epic 2: Repository & Document Browsing
 
-**Goal:** A logged-in user can connect a GitHub repository to Quillarto and see a list of the `.qmd` files within it.
+**Goal:** A logged-in user can connect a GitHub repository to Quartorium and see a list of the `.qmd` files within it.
 
 *   **Task 2.1 (Backend):** Define the `repositories` and `documents` table schemas in the database.
 *   **Task 2.2 (Backend):** Create a protected `/api/repos` endpoint (POST) that takes a GitHub repo URL. This endpoint will:
@@ -122,7 +122,7 @@ This is the core of the new model. Each row represents a unique collaborative se
 *   `id`: SERIAL PRIMARY KEY
 *   `doc_id`: INT REFERENCES `documents(id)`
 *   `share_token`: VARCHAR(255) UNIQUE NOT NULL (A long, unguessable random string)
-*   `collab_branch_name`: VARCHAR(255) NOT NULL (e.g., "quillarto/collab-prof-smith-2023-10-28")
+*   `collab_branch_name`: VARCHAR(255) NOT NULL (e.g., "quartorium/collab-prof-smith-2023-10-28")
 *   `collaborator_label`: VARCHAR(255) (A user-provided friendly name)
 *   `created_at`: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 
@@ -135,10 +135,10 @@ This endpoint creates a new shareable link and its corresponding branch.
     1.  Verify the authenticated user owns the `repoId`.
     2.  Find or create an entry in the `documents` table for this `repoId` and `filepath`.
     3.  Generate a unique, secure `share_token`.
-    4.  Generate a descriptive `collab_branch_name` (e.g., `quillarto/review-[label]-[timestamp]`).
+    4.  Generate a descriptive `collab_branch_name` (e.g., `quartorium/review-[label]-[timestamp]`).
     5.  Use the Git client to create this new branch in the cloned repository, branching off the repository's main branch.
     6.  Insert a new record into the `share_links` table with the `doc_id`, `share_token`, `collab_branch_name`, and `label`.
-    7.  **Response:** `201 Created` with the new share link details: `{ "shareUrl": "https://quillarto.app/collab/[share_token]", "label": "..." }`
+    7.  **Response:** `201 Created` with the new share link details: `{ "shareUrl": "https://quartorium.app/collab/[share_token]", "label": "..." }`
 
 **B. `GET /api/docs/:docId/shares` (New Endpoint)**
 Fetches all existing share links for a given document.
@@ -167,7 +167,7 @@ This is called by the collaborator's editor to save changes.
     4.  Use the Git client to:
         a. Check out the `collab_branch_name`.
         b. Write the new `.qmd` string to the correct `filepath`.
-        c. Commit the change with a generic message (e.g., "Update from collaborator via Quillarto").
+        c. Commit the change with a generic message (e.g., "Update from collaborator via quartorium").
     5.  **Response:** `200 OK` with `{ "status": "saved" }`.
 
 #### 4. Core Logic Modules (Backend)
@@ -221,12 +221,12 @@ This is called by the collaborator's editor to save changes.
 
 *   **Anchor Point:** A self-closing HTML comment is placed directly in the text to mark where a comment thread begins.
     ```markdown
-    This is a paragraph with some important text that needs discussion.<!-- quillarto-comment-anchor id="uuid-123-abc" -->
+    This is a paragraph with some important text that needs discussion.<!-- quartorium-comment-anchor id="uuid-123-abc" -->
     ```
 *   **Data Store:** A single, large HTML comment block at the very end of the `.qmd` file will contain a JSON object with all the comment data. This keeps the main text clean.
     ```markdown
     <!--
-    quillarto-metadata:
+    quartorium-metadata:
     {
       "comments": {
         "uuid-123-abc": {
@@ -246,11 +246,11 @@ This is called by the collaborator's editor to save changes.
 
 *   **Task 6.1: Refine the Document Serializer:**
     *   The backend's "ProseMirror-to-QMD" serializer (to be built in Epic 4) must be aware of the comment data.
-    *   When saving, it will take the comment data (managed by the frontend) and serialize it into the JSON block at the end of the file. It will also ensure the `<!-- quillarto-comment-anchor ... -->` tags are correctly placed in the text.
+    *   When saving, it will take the comment data (managed by the frontend) and serialize it into the JSON block at the end of the file. It will also ensure the `<!-- quartorium-comment-anchor ... -->` tags are correctly placed in the text.
 
 *   **Task 6.2: Refine the Document Parser:**
     *   The backend's "QMD-to-ProseMirror" parser (`astParser.js`) must be taught to extract the comment data.
-    *   It will find the `quillarto-metadata` block, parse the JSON, and attach the `comments` object to the top-level ProseMirror document node's `attrs`.
+    *   It will find the `quartorium-metadata` block, parse the JSON, and attach the `comments` object to the top-level ProseMirror document node's `attrs`.
 
 #### 3. Frontend Tasks
 

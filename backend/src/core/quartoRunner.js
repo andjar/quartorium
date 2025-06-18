@@ -11,7 +11,7 @@ const os = require('os');
 // For this trusted-user-only phase, we proceed with this simplified model.
 
 async function renderChunk(code, chunkOptions) {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'quillarto-'));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'quartorium-'));
   const tempQmdPath = path.join(tempDir, 'temp.qmd');
   const tempHtmlPath = path.join(tempDir, 'temp.html');
 

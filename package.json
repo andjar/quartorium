@@ -1,8 +1,8 @@
 {
-  "name": "quillarto-monorepo",
+  "name": "quartorium-monorepo",
   "private": true,
   "version": "1.0.0",
-  "description": "Root for the Quillarto project",
+  "description": "Root for the Quartorium project",
   "workspaces": [
     "backend",
     "frontend"

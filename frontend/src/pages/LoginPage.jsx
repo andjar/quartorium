@@ -4,7 +4,7 @@ import './LoginPage.css'; // We'll create this for some basic styling
 function LoginPage() {
   return (
     <div className="login-container">
-      <h1>Welcome to Quillarto</h1>
+      <h1>Welcome to Quartorium</h1>
       <p>The collaborative editor for modern scientific writing.</p>
       <a href="http://localhost:8000/api/auth/github" className="login-button">
         <svg aria-hidden="true" height="20" viewBox="0 0 16 16" version="1.1" width="20" className="github-icon">

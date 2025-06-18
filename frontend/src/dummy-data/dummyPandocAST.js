@@ -4,7 +4,7 @@ export const dummyPandocAST = {
   "pandoc-api-version": [1, 22, 2, 1],
   "meta": {
     "title": { "t": "Str", "c": "My Dummy Paper" },
-    "author": { "t": "Str", "c": "A. Quillarto User" },
+    "author": { "t": "Str", "c": "A. Quartorium User" },
     "format": { "t": "Str", "c": "html" }
   },
   "blocks": [

@@ -6,7 +6,7 @@ export const dummyProseMirrorDoc = {
       // The YAML frontmatter from the AST's 'meta' block
       yaml: {
         title: 'My Dummy Paper',
-        author: 'A. Quillarto User',
+        author: 'A. Quartorium User',
         format: 'html',
       },
     },
