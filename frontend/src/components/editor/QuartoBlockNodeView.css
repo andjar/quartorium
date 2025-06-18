@@ -1,21 +1,51 @@
 .quarto-block {
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    margin: 1rem 0;
-    background-color: #f9f9f9;
-    overflow: hidden;
-  }
-  
-  .quarto-block-header {
-    background-color: #eee;
-    padding: 4px 8px;
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: #555;
-  }
-  
-  .quarto-block-output {
-    padding: 1rem;
-    /* This is important for plots and tables to render correctly */
-    overflow-x: auto;
-  }
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin: 1rem 0;
+  background-color: #f9f9f9;
+  overflow: hidden;
+}
+
+.quarto-block-header {
+  background-color: #eee;
+  padding: 4px 8px;
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #555;
+}
+
+.quarto-block-output {
+  padding: 1rem;
+  /* This is important for plots and tables to render correctly */
+  overflow-x: auto;
+}
+
+.quarto-block-content-wrapper {
+  border: 1px solid black;
+  padding: 10px;
+}
+
+/* Responsive images */
+.quarto-block-output img,
+.quarto-block-output figure img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Centering figures and tables */
+.quarto-block-output figure,
+.quarto-block-output table {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Styling for editable legend (caption/figcaption) */
+.editable-caption {
+  margin-top: 8px;
+  margin-bottom: 4px;
+  padding: 4px;
+  background-color: #f0f0f0; /* Slightly different background */
+  border: 1px dashed #ccc;   /* Subtle border */
+  font-style: italic; /* Optional: further distinguish from main content */
+}

@@ -2,9 +2,11 @@
 .editor-page-container {
     background-color: #f5f5f5; /* Light gray background for the page */
     min-height: 100vh; /* Full viewport height */
-    width: 100vw; /* Full viewport width */
+    width: 100vw; /* Full width of parent */
     margin-left: calc(-50vw + 50%); /* Override any parent container constraints */
+    margin-right: calc(-50vw + 50%); /* Override right side constraints too */
     position: relative; /* Establish positioning context */
+    overflow-x: hidden; /* Prevent horizontal overflow */
   }
   
   /* A full-width header bar for controls, with a subtle bottom border */

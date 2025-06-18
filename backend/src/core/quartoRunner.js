@@ -28,7 +28,7 @@ format: html
 
     // Execute the Quarto CLI command
     await new Promise((resolve, reject) => {
-      exec(`quarto render "${tempQmdPath}" --to html`, (error, stdout, stderr) => {
+      exec(`quarto render "${tempQmdPath}" --to html --self-contained`, (error, stdout, stderr) => {
         if (error) {
           console.error(`Quarto render error: ${stderr}`);
           return reject(new Error(`Quarto execution failed: ${stderr}`));
@@ -41,6 +41,7 @@ format: html
     
     // A simple way to extract just the output div from the rendered HTML body
     const match = htmlOutput.match(/<div id="quarto-content" role="main">([\s\S]*?)<\/div>/);
+
     return match ? match[1].trim() : '<div>Error: Could not extract content.</div>';
 
   } catch (error) {
