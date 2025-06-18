@@ -246,9 +246,21 @@ function transformBodyNodes(children, repoId, context) {
         break;
 
       case 'p':
+        let p_content = [];
+        if (node.$$) { // If there are child elements
+          p_content = transformBodyNodes(node.$$, repoId, context);
+        } else if (node._ && node._.trim()) { // Else if there's direct text content and it's not empty
+          p_content = [{ type: 'text', text: node._.trim() }];
+        }
+        // If there are both direct text and children, xml2js typically wraps direct text
+        // in its own __text__ node within $$. If not, this simplified logic might
+        // miss direct text if $$ also exists. However, standard JATS usage and xml2js behavior
+        // usually don't mix them at the same level without __text__ nodes for the direct text parts.
+        // This change prioritizes explicit children if they exist, otherwise looks for direct text.
+
         pmNodes.push({
           type: 'paragraph',
-          content: transformBodyNodes(node.$$, repoId, context)
+          content: p_content
         });
         break;
       
