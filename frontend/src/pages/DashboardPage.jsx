@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
+import ShareModal from '../components/ShareModal';
 
 function DashboardPage() {
   const [user, setUser] = useState(null);
@@ -12,6 +13,7 @@ function DashboardPage() {
   const [error, setError] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [sharingFile, setSharingFile] = useState(null); // { repoId, filepath }
   const navigate = useNavigate();
 
   const fetchRepos = useCallback(() => {
@@ -121,11 +123,14 @@ function DashboardPage() {
                 ) : qmdFiles.length > 0 ? (
                   <ul>
                     {qmdFiles.map((file) => (
-                      <li key={file}>
-                      <Link to={`/editor?repoId=${selectedRepo.id}&filepath=${encodeURIComponent(file)}`}>
-                        {file}
-                      </Link>
-                    </li>
+                      <li key={file} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Link to={`/editor?repoId=${selectedRepo.id}&filepath=${encodeURIComponent(file)}`}>
+                          {file}
+                        </Link>
+                        <button onClick={() => setSharingFile({ repoId: selectedRepo.id, filepath: file })}>
+                          Share
+                        </button>
+                      </li>
                     ))}
                   </ul>
                 ) : (
@@ -137,6 +142,13 @@ function DashboardPage() {
           </div>
         </div>
       </main>
+      {sharingFile && (
+        <ShareModal 
+          repoId={sharingFile.repoId} 
+          filepath={sharingFile.filepath} 
+          onClose={() => setSharingFile(null)} 
+        />
+      )}
     </div>
   );
 }

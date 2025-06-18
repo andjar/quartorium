@@ -55,8 +55,45 @@ const createReposTable = () => {
   });
 };
 
+const createDocumentsTable = () => {
+  const sql = `
+    CREATE TABLE IF NOT EXISTS documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_id INTEGER NOT NULL,
+      filepath TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(repo_id, filepath),
+      FOREIGN KEY (repo_id) REFERENCES repositories (id)
+    )
+  `;
+  db.run(sql, (err) => {
+    if (err) console.error('Error creating documents table:', err.message);
+    else console.log('✅ Documents table is ready.');
+  });
+};
+
+const createShareLinksTable = () => {
+  const sql = `
+    CREATE TABLE IF NOT EXISTS share_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      doc_id INTEGER NOT NULL,
+      share_token TEXT UNIQUE NOT NULL,
+      collab_branch_name TEXT NOT NULL,
+      collaborator_label TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (doc_id) REFERENCES documents (id)
+    )
+  `;
+  db.run(sql, (err) => {
+    if (err) console.error('Error creating share_links table:', err.message);
+    else console.log('✅ Share Links table is ready.');
+  });
+};
+
 // Initialize the database and table
 createUsersTable();
 createReposTable();
+createDocumentsTable();
+createShareLinksTable();
 
 module.exports = db;
