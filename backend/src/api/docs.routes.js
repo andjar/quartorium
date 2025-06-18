@@ -19,38 +19,94 @@ const isAuthenticated = (req, res, next) => {
 // All doc routes require authentication
 router.use(isAuthenticated);
 
-// GET /api/docs/view?repoId=1&filepath=path/to/doc.qmd
+// GET /api/docs/view?repoId=1&filepath=path/to/doc.qmd or GET /api/docs/view?shareToken=TOKEN
 router.get('/view', async (req, res) => {
-    const { repoId, filepath } = req.query;
-    if (!repoId || !filepath) {
-      return res.status(400).json({ error: 'repoId and filepath are required.' });
-    }
-  
-    try {
-      // 1. Verify user has access to this repo
-      const repo = await new Promise((resolve, reject) => {
-        db.get('SELECT * FROM repositories WHERE id = ? AND user_id = ?', [repoId, req.user.id], (err, row) => {
-          if (err || !row) return reject(new Error('Repo not found or access denied.'));
+  const { repoId: queryRepoId, filepath: queryFilepath, shareToken } = req.query;
+
+  try {
+    let effectiveRepoId;
+    let effectiveFilepath;
+    let projectDir;
+    let repoFullName; // Used for projectDir construction
+
+    if (shareToken) {
+      // Logic for handling shareToken
+      const linkInfo = await new Promise((resolve, reject) => {
+        const sql = `
+          SELECT 
+            s.collab_branch_name, 
+            d.filepath,
+            r.id as repoId, 
+            r.full_name
+          FROM share_links s 
+          JOIN documents d ON s.doc_id = d.id 
+          JOIN repositories r ON d.repo_id = r.id 
+          WHERE s.share_token = ?
+        `;
+        db.get(sql, [shareToken], (err, row) => {
+          if (err) return reject(new Error('Database error while fetching share link.'));
+          if (!row) return reject(new Error('Invalid or expired share token.'));
           resolve(row);
         });
       });
-  
-      const projectDir = path.join(REPOS_DIR, repo.full_name);
-      const fullFilepath = path.join(projectDir, filepath);
-  
-      // 2. Render the document to a Pandoc AST
-      const { ast } = await renderToAST(fullFilepath, projectDir);
-      
-      // 3. Transform the Pandoc AST to ProseMirror JSON
-      const proseMirrorJson = pandocAST_to_proseMirrorJSON(ast, repoId);
-      
-      res.json(proseMirrorJson);
-  
-    } catch (error) {
-      console.error('Error getting document view:', error);
-      res.status(500).json({ error: error.message });
+
+      effectiveRepoId = linkInfo.repoId;
+      effectiveFilepath = linkInfo.filepath;
+      repoFullName = linkInfo.full_name;
+      projectDir = path.join(REPOS_DIR, repoFullName);
+
+      // Checkout the collaboration branch
+      await git.checkout({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
+
+    } else {
+      // Existing logic for repoId and filepath
+      if (!queryRepoId || !queryFilepath) {
+        return res.status(400).json({ error: 'repoId and filepath are required when not using shareToken.' });
+      }
+
+      const repo = await new Promise((resolve, reject) => {
+        db.get('SELECT * FROM repositories WHERE id = ? AND user_id = ?', [queryRepoId, req.user.id], (err, row) => {
+          if (err) return reject(new Error('Database error while fetching repository.'));
+          if (!row) return reject(new Error('Repo not found or access denied.'));
+          resolve(row);
+        });
+      });
+
+      effectiveRepoId = queryRepoId;
+      effectiveFilepath = queryFilepath;
+      repoFullName = repo.full_name;
+      projectDir = path.join(REPOS_DIR, repoFullName);
+      // File will be read from the currently checked-out branch or default for this repo
     }
-  });
+
+    const fullFilepath = path.join(projectDir, effectiveFilepath);
+
+    // Check if file exists before trying to render
+    try {
+      await fs.access(fullFilepath);
+    } catch (fileNotFoundError) {
+      return res.status(404).json({ error: `File not found: ${effectiveFilepath}` });
+    }
+
+    // Render the document to a Pandoc AST
+    const { ast } = await renderToAST(fullFilepath, projectDir);
+    
+    // Transform the Pandoc AST to ProseMirror JSON
+    const proseMirrorJson = pandocAST_to_proseMirrorJSON(ast, effectiveRepoId);
+    
+    res.json(proseMirrorJson);
+
+  } catch (error) {
+    console.error('Error getting document view:', error.message);
+    if (error.message.includes('share token') || error.message.includes('access denied')) {
+      return res.status(403).json({ error: error.message });
+    }
+    if (error.message.includes('File not found')) {
+        return res.status(404).json({ error: error.message});
+    }
+    res.status(500).json({ error: `Failed to get document view: ${error.message}` });
+  }
+});
 
 // POST /api/docs/share - Create a new share link
 router.post('/share', async (req, res) => {

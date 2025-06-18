@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
+import Link from '@tiptap/extension-link';
 import StarterKit from '@tiptap/starter-kit';
 import debounce from 'lodash.debounce';
 import QuartoBlock from '../components/editor/QuartoBlock';
@@ -30,7 +31,17 @@ function CollabEditorPage() {
   );
 
   const editor = useEditor({
-    extensions: [StarterKit, QuartoBlock],
+    extensions: [
+      StarterKit, // You can keep StarterKit
+      Link.configure({
+        openOnClick: false, // Disable clicking on links
+        autolink: false,    // Disable automatic link creation
+        editable: false,    // Make links non-editable
+        // You might want to ensure that links from StarterKit are disabled if you add Link separately
+        // Or configure StarterKit: StarterKit.configure({ link: { /* options */ }})
+      }),
+      QuartoBlock
+    ],
     content: '',
     editable: true,
     onUpdate: ({ editor }) => {

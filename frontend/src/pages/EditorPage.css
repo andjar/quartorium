@@ -1,6 +1,10 @@
-/* The main container for the entire editor view */
+/* Override root container constraints for editor pages */
 .editor-page-container {
-    background-color: #fff; /* A clean white background */
+    background-color: #f5f5f5; /* Light gray background for the page */
+    min-height: 100vh; /* Full viewport height */
+    width: 100vw; /* Full viewport width */
+    margin-left: calc(-50vw + 50%); /* Override any parent container constraints */
+    position: relative; /* Establish positioning context */
   }
   
   /* A full-width header bar for controls, with a subtle bottom border */
@@ -14,14 +18,23 @@
     top: 0;
     background-color: #fff;
     z-index: 10; /* Ensures it stays above the content */
+    width: 100%; /* Full width */
+    box-sizing: border-box; /* Include padding in width calculation */
   }
   
   /* The main content area that holds the editor */
   .editor-content-area {
     /* This creates our main column and the side margins */
     max-width: 800px; /* The ideal reading width for the text */
+    width: 100%; /* Full width up to max-width */
     margin: 0 auto; /* This centers the column on the page */
     padding: 2rem 1.5rem; /* Vertical and horizontal padding */
+    background-color: #fff; /* White background for the edit window */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); /* Subtle shadow to separate from background */
+    border-radius: 8px; /* Rounded corners */
+    margin-top: 2rem; /* Space from header */
+    margin-bottom: 2rem; /* Space from bottom */
+    box-sizing: border-box; /* Include padding in width calculation */
   }
   
   /* This is the direct parent of the TipTap editor content */

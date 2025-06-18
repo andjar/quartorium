@@ -14,5 +14,8 @@
   },
   "keywords": [],
   "author": "",
-  "license": "GPL-3.0-only"
+  "license": "GPL-3.0-only",
+  "dependencies": {
+    "@tiptap/extension-link": "^2.14.0"
+  }
 }
