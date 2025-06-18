@@ -46,6 +46,7 @@ Thumbs.db
 # schema/migration files that create it.
 backend/src/db/quartorium.db
 backend/src/db/quartorium.db-journal
+*.db
 
 # Temporary directories for cloned git repos (we'll create this later)
 backend/repos/
