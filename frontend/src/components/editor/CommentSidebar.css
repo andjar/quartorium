@@ -11,7 +11,8 @@
   border-left: 1px solid #ccc;
   background-color: #f9f9f9;
   overflow-y: auto;
-  height: calc(100vh - 60px); /* Adjust based on your header height */
+  height: calc(100vh - 30px); /* Adjust to account for fixed header height */
+  margin-top: 30px; /* Add top margin to push below fixed header */
   transition: width 0.3s ease;
 }
 

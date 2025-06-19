@@ -11,17 +11,18 @@
   
   /* A full-width header bar for controls, with a subtle bottom border */
   .editor-header {
-    padding: 1rem 2rem;
+    padding: 1rem;
     border-bottom: 1px solid #e0e0e0;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    position: sticky; /* Makes the header stick to the top as you scroll */
+    position: fixed; /* Fixed positioning to keep header always visible */
     top: 0;
+    left: 0;
+    right: 0;
     background-color: #fff;
-    z-index: 10; /* Ensures it stays above the content */
+    z-index: 1000; /* High z-index to ensure it stays above all content */
     width: 100%; /* Full width */
-    box-sizing: border-box; /* Include padding in width calculation */
   }
   
   /* The main content area that holds the editor */
@@ -47,8 +48,9 @@
   display: flex;
   flex-grow: 1;
   overflow: hidden; /* Prevents scrollbars from appearing due to flexbox */
-  /* We want the main area to take up the available height below the header */
-  height: calc(100vh - 60px); /* Adjust 60px if your header height is different */
+  /* Adjust height to account for fixed header */
+  height: calc(100vh - 80px); /* Increased from 60px to account for header height */
+  margin-top: 80px; /* Add top margin to push content below fixed header */
 }
   
   /* This is the direct parent of the TipTap editor content */

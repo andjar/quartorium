@@ -273,14 +273,14 @@ function CollabEditorPage() {
       <header className="editor-header">
         <h3>Quartorium Collaborative Editor</h3>
         <div>
-          <button onClick={addComment} style={{ marginRight: '1rem' }}>Add Comment</button>
           <span>Status: {status} (Commit: {baseCommitHash ? baseCommitHash.substring(0, 7) : 'N/A'})</span>
+          <button onClick={addComment} style={{ margin: '1rem' }}>Add Comment</button>
           <button
             onClick={handleCollabCommit}
-            style={{ marginLeft: '1rem' }}
+            style={{ marginRight: '2rem' }}
             disabled={!baseCommitHash || status.includes('Saving') || status.includes('Committing...')}
           >
-            Commit to Collaboration Branch
+            Commit
           </button>
         </div>
       </header>
