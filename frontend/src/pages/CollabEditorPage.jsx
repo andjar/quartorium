@@ -16,8 +16,12 @@ function CollabEditorPage() {
   const [status, setStatus] = useState('Loading...');
   const [error, setError] = useState('');
   const [baseCommitHash, setBaseCommitHash] = useState(null);
-  const [comments, setComments] = useState([]);
+  const [comments, setComments] = useState([]); // Existing state for comments
   const [activeCommentId, setActiveCommentId] = useState(null);
+
+  // Placeholder for current user - replace with actual user context/auth later
+  const currentUser = { id: `user-${Math.random().toString(36).substr(2, 9)}`, name: 'Current User' };
+
 
   const handleCollabCommit = async () => {
     if (!baseCommitHash) {
@@ -87,12 +91,14 @@ function CollabEditorPage() {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        link: false,
+        link: false, // Keep other StarterKit options as they are
+        document: false, // Assuming 'document' is not a standard option here, ensure StarterKit is configured correctly
+        // Ensure other relevant StarterKit modules are enabled or disabled as needed.
       }),
       Link.configure({
         openOnClick: false,
         autolink: false,
-        editable: false,
+        editable: false, // Typically, links are not directly editable text-wise in editor, but through a modal/popup
       }),
       QuartoBlock,
       Citation,
@@ -100,6 +106,7 @@ function CollabEditorPage() {
       CommentMark.configure({
         HTMLAttributes: { class: 'comment-mark' },
         onCommentClick: (commentId) => setActiveCommentId(commentId),
+        activeCommentId: activeCommentId, // Pass activeCommentId here
       }),
     ],
     content: {
@@ -110,6 +117,23 @@ function CollabEditorPage() {
     onUpdate: ({ editor }) => {
       setStatus('Unsaved');
       saveDocument(editor.getJSON());
+
+      // Comment deletion synchronization
+      const docCommentIds = new Set();
+      editor.state.doc.descendants((node) => {
+        if (node.marks) {
+          node.marks.forEach(mark => {
+            if (mark.type.name === 'comment' && mark.attrs.commentId) {
+              docCommentIds.add(mark.attrs.commentId);
+            }
+          });
+        }
+      });
+
+      setComments(prevComments => prevComments.filter(comment => docCommentIds.has(comment.id)));
+      if (activeCommentId && !docCommentIds.has(activeCommentId)) {
+        setActiveCommentId(null);
+      }
     },
   });
 
@@ -117,8 +141,13 @@ function CollabEditorPage() {
     if (!editor || !shareToken) return;
     setStatus('Loading document...');
 
-    // TODO: When backend supports it, load comments along with the document.
-    // For now, comments are local to the session and start empty.
+    // Fetching from /api/docs/view as per backend changes in previous subtask for initial load
+    // This endpoint should return { prosemirrorJson, comments, currentCommitHash }
+    // If /api/collab/${shareToken} is the correct one for *live collab data*, it should also adopt this structure.
+    // For now, assuming /api/docs/view for initial load as it was modified to return comments.
+    // If this page is *only* for collab links, then /api/collab/${shareToken} needs to be updated in backend
+    // to match the { prosemirrorJson, comments, currentCommitHash } structure.
+    // Sticking to /api/collab/ for now as per original description of CollabEditorPage
     fetch(`/api/collab/${shareToken}`)
       .then(res => {
         if (!res.ok) {
@@ -128,6 +157,7 @@ function CollabEditorPage() {
         return res.json();
       })
       .then(data => {
+        // Expecting data to have { prosemirrorJson, comments, currentCommitHash }
         if (data.prosemirrorJson && data.currentCommitHash) {
           let contentToLoad = data.prosemirrorJson;
           if (typeof data.prosemirrorJson === 'string') {
@@ -140,6 +170,12 @@ function CollabEditorPage() {
           }
           editor.commands.setContent(contentToLoad);
           setBaseCommitHash(data.currentCommitHash);
+          // Load comments if provided by the backend
+          if (data.comments) {
+            setComments(Array.isArray(data.comments) ? data.comments : []);
+          } else {
+            setComments([]); // Initialize as empty if not provided
+          }
           setStatus('Loaded');
         } else {
           throw new Error('Invalid data structure from backend. Missing prosemirrorJson or currentCommitHash.');
@@ -164,11 +200,24 @@ function CollabEditorPage() {
       return;
     }
 
-    const commentText = prompt('Enter your comment:');
+    const commentText = prompt('Enter your comment:'); // Keep prompt for now
     if (commentText) {
-      const newCommentId = `comment-${Date.now()}`;
-      setComments([...comments, { id: newCommentId, text: commentText }]);
-      editor.chain().focus().setComment(newCommentId).run();
+      const newCommentId = `c-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+      const newComment = {
+        id: newCommentId,
+        author: currentUser.id, // Using placeholder
+        timestamp: new Date().toISOString(),
+        status: "open",
+        thread: [
+          {
+            text: commentText,
+            author: currentUser.id, // Using placeholder
+            timestamp: new Date().toISOString()
+          }
+        ]
+      };
+      setComments(prevComments => [...prevComments, newComment]);
+      editor.chain().focus().setComment(newCommentId).run(); // Use setComment to apply the mark
       setActiveCommentId(newCommentId);
     }
   };
@@ -195,8 +244,10 @@ function CollabEditorPage() {
         </main>
         <CommentSidebar
           comments={comments}
+          setComments={setComments} // Pass setComments
           activeCommentId={activeCommentId}
-          onCommentSelect={setActiveCommentId}
+          onCommentSelect={setActiveCommentId} // This is for selecting/activating a comment from the sidebar
+          currentUser={currentUser} // Pass currentUser
         />
       </div>
     </div>

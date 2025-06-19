@@ -1,5 +1,6 @@
 import { Mark, mergeAttributes } from '@tiptap/core';
 import { Plugin, PluginKey } from 'prosemirror-state';
+import { Decoration, DecorationSet } from 'prosemirror-view';
 
 export const CommentMark = Mark.create({
   name: 'comment',
@@ -8,6 +9,7 @@ export const CommentMark = Mark.create({
     return {
       HTMLAttributes: {},
       onCommentClick: () => {},
+      activeCommentId: null, // new option
     };
   },
 
@@ -57,20 +59,56 @@ export const CommentMark = Mark.create({
   },
 
   addProseMirrorPlugins() {
+    const self = this; // To access Mark options in plugin
     return [
       new Plugin({
         key: new PluginKey('commentClick'),
         props: {
           handleClick: (view, pos, event) => {
             const { schema } = view.state;
-            const attrs = view.domAtPos(pos).node.marks.find(m => m.type === schema.marks.comment)?.attrs;
-            if (attrs && attrs.commentId && event.target.matches('span[data-comment-id]')) {
-              this.options.onCommentClick(attrs.commentId);
+            // Ensure the node at pos is resolved correctly
+            const $pos = view.state.doc.resolve(pos);
+            // Check marks at the resolved position
+            const marks = $pos.marks();
+            const commentMark = marks.find(m => m.type === schema.marks.comment);
+
+            if (commentMark && commentMark.attrs.commentId && event.target.closest('span[data-comment-id]')) {
+              self.options.onCommentClick(commentMark.attrs.commentId);
             }
             return false;
           },
         },
       }),
+      new Plugin({
+        key: new PluginKey('commentHighlight'),
+        state: {
+          init() { return DecorationSet.empty; },
+          apply(tr, oldSet, oldState, newState) {
+            // Access activeCommentId via self.options
+            const activeId = self.options.activeCommentId;
+            if (!activeId) return DecorationSet.empty;
+
+            const decorations = [];
+            newState.doc.descendants((node, pos) => {
+              if (node.isText && node.marks.length > 0) {
+                node.marks.forEach(mark => {
+                  if (mark.type.name === self.name && mark.attrs.commentId === activeId) {
+                    decorations.push(
+                      Decoration.inline(pos, pos + node.nodeSize, { class: 'comment-mark-active' })
+                    );
+                  }
+                });
+              }
+            });
+            return DecorationSet.create(newState.doc, decorations);
+          }
+        },
+        props: {
+          decorations(state) {
+            return this.getState(state);
+          }
+        }
+      })
     ];
   },
 });
