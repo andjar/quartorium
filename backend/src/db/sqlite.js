@@ -96,4 +96,49 @@ createReposTable();
 createDocumentsTable();
 createShareLinksTable();
 
+// Create the live_documents table
+const createLiveDocumentsTable = () => {
+  const sql = `
+    CREATE TABLE IF NOT EXISTS live_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_id INTEGER,
+      filepath TEXT,
+      share_token TEXT UNIQUE,
+      prosemirror_json TEXT NOT NULL,
+      base_commit_hash TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (repo_id) REFERENCES repositories(id) ON DELETE CASCADE,
+      CHECK (
+        (repo_id IS NOT NULL AND filepath IS NOT NULL AND share_token IS NULL) OR
+        (repo_id IS NULL AND filepath IS NULL AND share_token IS NOT NULL)
+      )
+    )
+  `;
+  db.run(sql, (err) => {
+    if (err) {
+      console.error('Error creating live_documents table:', err.message);
+    } else {
+      console.log('✅ live_documents table is ready.');
+      // Add a trigger to update updated_at on row modification
+      const triggerSql = `
+        CREATE TRIGGER IF NOT EXISTS update_live_documents_updated_at
+        AFTER UPDATE ON live_documents
+        FOR EACH ROW
+        BEGIN
+          UPDATE live_documents SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+        END;
+      `;
+      db.run(triggerSql, (triggerErr) => {
+        if (triggerErr) {
+          console.error('Error creating trigger for live_documents:', triggerErr.message);
+        } else {
+          console.log('✅ Trigger for live_documents is ready.');
+        }
+      });
+    }
+  });
+};
+
+createLiveDocumentsTable();
+
 module.exports = db;

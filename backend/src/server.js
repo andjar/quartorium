@@ -72,11 +72,13 @@ app.listen(PORT, () => {
 
 // --- API Routes ---
 const docRoutes = require('./api/docs.routes');
+const liveDocsRouter = require('./api/live_docs.routes'); // Import the new router
 const assetRoutes = require('./api/assets.routes');
 const collabRoutes = require('./api/collab.routes');
 
 app.use('/api/repos', repoRoutes);
 app.use('/api/docs', docRoutes);
+app.use('/api/docs', liveDocsRouter); // Use the new router for /api/docs
 app.use('/api/assets', assetRoutes);
 
 // --- Public API Routes ---
