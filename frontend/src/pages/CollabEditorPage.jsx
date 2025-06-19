@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import Link from '@tiptap/extension-link';
@@ -16,8 +16,18 @@ function CollabEditorPage() {
   const [status, setStatus] = useState('Loading...');
   const [error, setError] = useState('');
   const [baseCommitHash, setBaseCommitHash] = useState(null);
-  const [comments, setComments] = useState([]);
+  const [comments, setComments] = useState([]); // Existing state for comments
   const [activeCommentId, setActiveCommentId] = useState(null);
+  const commentsRef = useRef(comments); // Ref to store current comments
+
+  // Update ref whenever comments change
+  useEffect(() => {
+    commentsRef.current = comments;
+  }, [comments]);
+
+  // Placeholder for current user - replace with actual user context/auth later
+  const currentUser = { id: `user-${Math.random().toString(36).substr(2, 9)}`, name: 'Current User' };
+
 
   const handleCollabCommit = async () => {
     if (!baseCommitHash) {
@@ -59,8 +69,10 @@ function CollabEditorPage() {
         setStatus('Error: Base commit hash not available. Live changes not saved.');
         return;
       }
-      // TODO: When backend supports it, send comments as well.
-      // For now, only the document content is saved collaboratively.
+      // Send both document content and comments to the backend
+      // Access current comments state directly to avoid timing issues
+      const currentComments = commentsRef.current;
+      console.log('Saving document with comments:', currentComments);
       setStatus('Saving live changes...');
       try {
         const response = await fetch(`/api/collab/${shareToken}`, {
@@ -69,6 +81,7 @@ function CollabEditorPage() {
           body: JSON.stringify({
             prosemirror_json: JSON.stringify(currentJsonContent),
             base_commit_hash: baseCommitHash,
+            comments: currentComments, // Use current comments
           }),
         });
         if (!response.ok) {
@@ -81,7 +94,7 @@ function CollabEditorPage() {
         setStatus(`Live save failed: ${saveError.message}`);
       }
     }, 2000),
-    [shareToken, baseCommitHash]
+    [shareToken, baseCommitHash] // Remove comments from dependencies to avoid timing issues
   );
 
   const editor = useEditor({
@@ -94,12 +107,14 @@ function CollabEditorPage() {
         autolink: false,
         editable: false,
       }),
+      // Re-enable custom extensions since backend returns content with these node types
       QuartoBlock,
       Citation,
       FigureReference,
       CommentMark.configure({
         HTMLAttributes: { class: 'comment-mark' },
         onCommentClick: (commentId) => setActiveCommentId(commentId),
+        activeCommentId: activeCommentId,
       }),
     ],
     content: {
@@ -108,19 +123,69 @@ function CollabEditorPage() {
     },
     editable: true,
     onUpdate: ({ editor }) => {
+      console.log('Editor update triggered');
       setStatus('Unsaved');
       saveDocument(editor.getJSON());
+
+      // Comment deletion synchronization
+      const docCommentIds = new Set();
+      editor.state.doc.descendants((node) => {
+        if (node.marks) {
+          node.marks.forEach(mark => {
+            if (mark.type.name === 'comment' && mark.attrs.commentId) {
+              docCommentIds.add(mark.attrs.commentId);
+            }
+          });
+        }
+      });
+
+      console.log('Comment IDs found in document:', Array.from(docCommentIds));
+      console.log('Current comments state before filtering:', comments);
+      
+      setComments(prevComments => {
+        const filteredComments = prevComments.filter(comment => docCommentIds.has(comment.id));
+        console.log('Comments after filtering:', filteredComments);
+        return filteredComments;
+      });
+      
+      if (activeCommentId && !docCommentIds.has(activeCommentId)) {
+        setActiveCommentId(null);
+      }
+    },
+    onCreate: ({ editor }) => {
+      console.log('Editor created successfully');
+      console.log('Editor instance:', editor);
+      console.log('Editor is editable:', editor.isEditable);
+      console.log('Editor content:', editor.getJSON());
+    },
+    onBeforeCreate: ({ editor }) => {
+      console.log('Editor before create');
     },
   });
+
+  // Add a check to see if editor is created
+  useEffect(() => {
+    console.log('Editor state check:', { editor: !!editor, shareToken });
+    if (editor) {
+      console.log('Editor is ready, current content:', editor.getJSON());
+    }
+  }, [editor, shareToken]);
 
   useEffect(() => {
     if (!editor || !shareToken) return;
     setStatus('Loading document...');
+    console.log('Loading document for shareToken:', shareToken);
 
-    // TODO: When backend supports it, load comments along with the document.
-    // For now, comments are local to the session and start empty.
+    // Fetching from /api/docs/view as per backend changes in previous subtask for initial load
+    // This endpoint should return { prosemirrorJson, comments, currentCommitHash }
+    // If /api/collab/${shareToken} is the correct one for *live collab data*, it should also adopt this structure.
+    // For now, assuming /api/docs/view for initial load as it was modified to return comments.
+    // If this page is *only* for collab links, then /api/collab/${shareToken} needs to be updated in backend
+    // to match the { prosemirrorJson, comments, currentCommitHash } structure.
+    // Sticking to /api/collab/ for now as per original description of CollabEditorPage
     fetch(`/api/collab/${shareToken}`)
       .then(res => {
+        console.log('API response status:', res.status);
         if (!res.ok) {
           return res.json().then(errData => Promise.reject(errData.error || `HTTP error! status: ${res.status}`))
                            .catch(() => Promise.reject(`HTTP error! status: ${res.status}`));
@@ -128,6 +193,8 @@ function CollabEditorPage() {
         return res.json();
       })
       .then(data => {
+        console.log('API response data:', data);
+        // Expecting data to have { prosemirrorJson, comments, currentCommitHash }
         if (data.prosemirrorJson && data.currentCommitHash) {
           let contentToLoad = data.prosemirrorJson;
           if (typeof data.prosemirrorJson === 'string') {
@@ -138,16 +205,25 @@ function CollabEditorPage() {
               throw new Error("Invalid JSON format received from backend.");
             }
           }
+          console.log('Setting editor content:', contentToLoad);
           editor.commands.setContent(contentToLoad);
           setBaseCommitHash(data.currentCommitHash);
+          // Load comments if provided by the backend
+          if (data.comments) {
+            setComments(Array.isArray(data.comments) ? data.comments : []);
+          } else {
+            setComments([]); // Initialize as empty if not provided
+          }
           setStatus('Loaded');
         } else {
+          console.error('Invalid data structure:', data);
           throw new Error('Invalid data structure from backend. Missing prosemirrorJson or currentCommitHash.');
         }
       })
       .catch(errMsg => {
         console.error('Failed to load document:', errMsg);
         setError(typeof errMsg === 'string' ? errMsg : 'This share link is invalid or has expired.');
+        console.log('Setting fallback content');
         editor.commands.setContent({
           type: 'doc',
           content: [{
@@ -164,11 +240,29 @@ function CollabEditorPage() {
       return;
     }
 
-    const commentText = prompt('Enter your comment:');
+    const commentText = prompt('Enter your comment:'); // Keep prompt for now
     if (commentText) {
-      const newCommentId = `comment-${Date.now()}`;
-      setComments([...comments, { id: newCommentId, text: commentText }]);
-      editor.chain().focus().setComment(newCommentId).run();
+      const newCommentId = `c-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+      const newComment = {
+        id: newCommentId,
+        author: currentUser.id, // Using placeholder
+        timestamp: new Date().toISOString(),
+        status: "open",
+        thread: [
+          {
+            text: commentText,
+            author: currentUser.id, // Using placeholder
+            timestamp: new Date().toISOString()
+          }
+        ]
+      };
+      console.log('Adding new comment:', newComment);
+      setComments(prevComments => {
+        const updatedComments = [...prevComments, newComment];
+        console.log('Updated comments state:', updatedComments);
+        return updatedComments;
+      });
+      editor.chain().focus().setComment(newCommentId).run(); // Use setComment to apply the mark
       setActiveCommentId(newCommentId);
     }
   };
@@ -195,8 +289,10 @@ function CollabEditorPage() {
         </main>
         <CommentSidebar
           comments={comments}
+          setComments={setComments} // Pass setComments
           activeCommentId={activeCommentId}
-          onCommentSelect={setActiveCommentId}
+          onCommentSelect={setActiveCommentId} // This is for selecting/activating a comment from the sidebar
+          currentUser={currentUser} // Pass currentUser
         />
       </div>
     </div>

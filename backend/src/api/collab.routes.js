@@ -3,11 +3,12 @@ const db = require('../db/sqlite');
 const path = require('path');
 const git = require('isomorphic-git'); // Re-add for GET endpoint
 const fs = require('fs/promises');
-const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser');
-// Import our new serializer - NO LONGER NEEDED for POST
-const { proseMirrorJSON_to_qmd } = require('../core/astSerializer'); // Needed for commit
-// Import the QMD parser to create blockMap
-const { parseQmd } = require('../core/qmdBlockParser'); // Potentially needed if astSerializer requires full parsing for context
+const matter = require('gray-matter'); // For YAML extraction
+const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser'); // Keep for GET, might remove if GET switches path
+// const { proseMirrorJSON_to_qmd } = require('../core/astSerializer'); // Replaced by new serializer
+const { proseMirrorToQmd } = require('../core/quartoSerializer'); // New serializer
+// Import the QMD parser to create blockMap - still needed for GET /:shareToken if rendering from branch
+const { parseQmd } = require('../core/qmdBlockParser');
 
 const router = express.Router();
 const REPOS_DIR = path.join(__dirname, '../../repos');
@@ -19,7 +20,8 @@ router.get('/:shareToken', async (req, res) => {
   try {
     // 1. First, check if there are any unsaved changes in live_documents
     const liveDoc = await new Promise((resolve, reject) => {
-      db.get('SELECT prosemirror_json, base_commit_hash FROM live_documents WHERE share_token = ?', [shareToken], (err, row) => {
+      // Updated SELECT query to include comments_json
+      db.get('SELECT prosemirror_json, base_commit_hash, comments_json FROM live_documents WHERE share_token = ?', [shareToken], (err, row) => {
         if (err) {
           console.error('Error checking live_documents:', err.message);
           resolve(null); // Continue with branch rendering if there's a DB error
@@ -33,23 +35,29 @@ router.get('/:shareToken', async (req, res) => {
     if (liveDoc) {
       console.log(`Returning unsaved changes for shareToken ${shareToken}`);
       let prosemirrorJson;
+      let comments = []; // Default to empty array for comments
+
       try {
         prosemirrorJson = JSON.parse(liveDoc.prosemirror_json);
+        if (liveDoc.comments_json) {
+          comments = JSON.parse(liveDoc.comments_json);
+        }
       } catch (e) {
-        console.error('Failed to parse stored prosemirror_json:', e);
-        // Fall through to branch rendering if parsing fails
+        console.error('Failed to parse stored JSON (ProseMirror or comments):', e);
+        // Fall through to branch rendering if parsing fails, prosemirrorJson might be null
       }
       
-      if (prosemirrorJson) {
+      if (prosemirrorJson) { // Only return if prosemirrorJson is valid
         return res.json({ 
           prosemirrorJson: prosemirrorJson, 
+          comments: comments, // Include comments in the response
           currentCommitHash: liveDoc.base_commit_hash 
         });
       }
     }
 
-    // 3. If no unsaved changes, render from the collaboration branch
-    console.log(`No unsaved changes found for shareToken ${shareToken}, rendering from branch`);
+    // 3. If no unsaved changes (or live doc parsing failed), render from the collaboration branch
+    console.log(`No valid unsaved changes found for shareToken ${shareToken}, rendering from branch`);
     
     // Find the share link and associated document/repo info
     const linkInfo = await new Promise((resolve, reject) => {
@@ -79,10 +87,20 @@ router.get('/:shareToken', async (req, res) => {
     const { blockMap } = parseQmd(qmdContent);
 
     // Render the document from that branch
+    // NOTE: This path (rendering from branch) currently uses the JATS pipeline,
+    // which doesn't inherently know about comments in the format this subtask is implementing.
+    // For consistency, if this route is used, it should ideally also use qmdToProseMirror
+    // which extracts comments from the QMD appendix if they were committed.
+    // However, the subtask focuses on live save/load and commit serialization.
+    // So, for now, this part will return empty comments if it falls through to here.
     const { jatsXml } = await renderToJATS(fullFilepath, projectDir, linkInfo.repoId, commitHash);
     const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, blockMap, linkInfo.repoId, commitHash, fullFilepath);
     
-    res.json({ prosemirrorJson: proseMirrorJson, currentCommitHash: commitHash });
+    // When rendering from branch, comments would need to be parsed from the QMD file itself
+    // using the logic from `extractCommentsAppendix` if we were to use the remark path here.
+    // Since we are using JATS path here, we'll return empty comments.
+    // Or, if the /api/docs/view endpoint is the primary one for viewing, it would handle this.
+    res.json({ prosemirrorJson: proseMirrorJson, comments: [], currentCommitHash: commitHash });
 
   } catch (error) {
     console.error('Error loading collab doc:', error);
@@ -93,12 +111,14 @@ router.get('/:shareToken', async (req, res) => {
 // POST /api/collab/:shareToken - Save changes from a collaborator
 router.post('/:shareToken', async (req, res) => {
   const { shareToken } = req.params;
-  const { prosemirror_json, base_commit_hash } = req.body;
+  const { prosemirror_json, base_commit_hash, comments } = req.body; // Added comments
 
   // Validate input
-  if (!prosemirror_json || !base_commit_hash) {
+  if (!prosemirror_json || !base_commit_hash) { // Comments can be optional (empty array)
     return res.status(400).json({ error: 'Missing prosemirror_json or base_commit_hash.' });
   }
+
+  const comments_json = comments ? JSON.stringify(comments) : JSON.stringify([]); // Ensure comments_json is always a string
 
   try {
     // 1. Validate shareToken and get associated repo_id and filepath (if needed, or just ensure it's valid)
@@ -107,16 +127,17 @@ router.post('/:shareToken', async (req, res) => {
     // However, the requirement is to UPSERT based on share_token.
 
     const upsertSql = `
-      INSERT INTO live_documents (share_token, prosemirror_json, base_commit_hash)
-      VALUES (?, ?, ?)
+      INSERT INTO live_documents (share_token, prosemirror_json, base_commit_hash, comments_json)
+      VALUES (?, ?, ?, ?)
       ON CONFLICT(share_token) DO UPDATE SET
         prosemirror_json = excluded.prosemirror_json,
         base_commit_hash = excluded.base_commit_hash,
+        comments_json = excluded.comments_json,
         updated_at = CURRENT_TIMESTAMP
       RETURNING id;
     `;
 
-    db.get(upsertSql, [shareToken, prosemirror_json, base_commit_hash], (err, row) => {
+    db.get(upsertSql, [shareToken, prosemirror_json, base_commit_hash, comments_json], (err, row) => {
       if (err) {
         console.error('Error saving collab document to live_documents:', err.message);
         // Check for UNIQUE constraint violation on share_token if the share_token itself is invalid
@@ -161,9 +182,10 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
   }
 
   try {
-    // 1. Retrieve stored JSON from live_documents
+    // 1. Retrieve stored JSON and comments from live_documents
     const liveDoc = await new Promise((resolve, reject) => {
-      db.get('SELECT prosemirror_json FROM live_documents WHERE share_token = ?', [shareToken], (err, row) => {
+      // Fetch both prosemirror_json and comments_json
+      db.get('SELECT prosemirror_json, comments_json FROM live_documents WHERE share_token = ?', [shareToken], (err, row) => {
         if (err) return reject(new Error(`Database error fetching live document: ${err.message}`));
         if (!row) return reject(new Error('No live document found for this share token. Save changes first.'));
         resolve(row);
@@ -171,10 +193,15 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
     });
 
     let parsedProsemirrorJson;
+    let parsedCommentsArray = []; // Default to empty array
+
     try {
       parsedProsemirrorJson = JSON.parse(liveDoc.prosemirror_json);
+      if (liveDoc.comments_json) {
+        parsedCommentsArray = JSON.parse(liveDoc.comments_json);
+      }
     } catch (e) {
-      return res.status(500).json({ error: 'Failed to parse stored Prosemirror JSON.' });
+      return res.status(500).json({ error: 'Failed to parse stored Prosemirror JSON or comments JSON.' });
     }
 
     // 2. Retrieve link information (collab_branch_name, filepath, repo.full_name)
@@ -238,8 +265,35 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
         }
     }
 
-    // 5. Convert JSON to QMD
-    const newQmdContent = proseMirrorJSON_to_qmd(parsedProsemirrorJson, originalQmdContent);
+    // 5. Extract YAML from originalQmdContent and Convert JSON to QMD
+    // Ensure originalQmdContent is defined, even if empty, for gray-matter
+    const currentOriginalQmdContent = originalQmdContent || '';
+    const { data: yamlObject } = matter(currentOriginalQmdContent);
+
+    // Create a YAML string. If yamlObject is empty, matter.stringify returns '---\n{}\n---' or similar.
+    // We want an empty string if no actual YAML, or just '--- \n ---' for empty frontmatter
+    let yamlString = '';
+    if (Object.keys(yamlObject).length > 0) {
+      yamlString = matter.stringify('', yamlObject); // This prepends '---' and appends '---'
+    } else if (currentOriginalQmdContent.startsWith('---')) {
+      // If original content started with --- but had no actual data, preserve that.
+      // This case might need refinement based on how `matter` handles truly empty YAML.
+      // For an empty YAML block like "--- \n ---", yamlObject will be empty.
+      // matter.stringify('', {}) might produce "--- {}\n ---"
+      // We want to ensure it's either a valid YAML string or an empty string if no frontmatter.
+      // A simple check: if original started with '---' and yamlObject is empty, it was an empty block.
+      const lines = currentOriginalQmdContent.split('\n');
+      if (lines.length >= 2 && lines[0].trim() === '---' && lines[1].trim() === '---') {
+        yamlString = '---\n---\n';
+      } else if (Object.keys(yamlObject).length > 0) {
+         yamlString = matter.stringify('', yamlObject);
+      } else {
+         yamlString = ''; // No frontmatter
+      }
+    }
+
+
+    const newQmdContent = proseMirrorToQmd(parsedProsemirrorJson, parsedCommentsArray, yamlString);
 
     // 6. Write and commit to collab branch
     const fullCollabFilepath = path.join(projectDir, collabFilepath);

@@ -7,8 +7,9 @@ const actualFs = require('fs/promises');
 const actualFsForGit = require('fs'); // for isomorphic-git fs plugin
 const crypto = require('crypto');
 const { v4: actualUuidv4 } = require('uuid');
-const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser');
-const { parseQmd } = require('../core/qmdBlockParser');
+// const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser'); // No longer needed for view
+// const { parseQmd } = require('../core/qmdBlockParser'); // No longer needed for view
+const { qmdToProseMirror } = require('../core/quartoParser'); // Import new parser
 const Diff = require('diff');
 const { ensureAuthenticated } = require('../core/auth');
 
@@ -105,9 +106,9 @@ router.get('/view', async (req, res) => {
       try {
         await actualFs.access(cacheFilename); // Check if file exists and is accessible
         const cachedContent = await actualFs.readFile(cacheFilename, 'utf8');
-        const proseMirrorJson = JSON.parse(cachedContent);
+        const parsedCache = JSON.parse(cachedContent); // Cache now stores { prosemirrorJson, comments }
         console.log(`[Cache HIT] Serving ${effectiveFilepath} for repo ${effectiveRepoId} (commit ${currentCommitHash.substring(0,7)}) from cache.`);
-        return res.json(proseMirrorJson);
+        return res.json(parsedCache); // Return the full cached object
       } catch (cacheReadError) {
         if (cacheReadError.code !== 'ENOENT') { // ENOENT is expected for a cache miss
           console.warn(`[Cache Read WARN] Error reading cache file ${cacheFilename}:`, cacheReadError);
@@ -133,22 +134,18 @@ router.get('/view', async (req, res) => {
       return res.status(404).json({ error: `File not found: ${effectiveFilepath}` });
     }
 
-    // Render the document to JATS
-    const { jatsXml, assetsCachePath } = await renderToJATS(fullFilepath, projectDir, effectiveRepoId, currentCommitHash);
-    
-    // Read the original QMD file to create the blockMap
+    // Read the QMD content
     const qmdContent = await actualFs.readFile(fullFilepath, 'utf8');
-    const { blockMap } = parseQmd(qmdContent);
     
-    // Transform the JATS to ProseMirror JSON
-    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, blockMap, effectiveRepoId, currentCommitHash, effectiveFilepath);
+    // Convert QMD to ProseMirror JSON and extract comments
+    const { prosemirrorJson, comments } = await qmdToProseMirror(qmdContent);
+
+    const resultPayload = { prosemirrorJson, comments };
 
     // --- START CACHE WRITE LOGIC ---
     if (currentCommitHash && cacheFilename) { // Only attempt to write if cache setup was successful
       try {
-        // Ensure CACHE_DIR exists (it might have failed silently before, or this is a good redundant check)
-        // await actualFs.mkdir(CACHE_DIR, { recursive: true }); // Already done at the beginning of the route handler
-        await actualFs.writeFile(cacheFilename, JSON.stringify(proseMirrorJson));
+        await actualFs.writeFile(cacheFilename, JSON.stringify(resultPayload)); // Cache the whole payload
         console.log(`[Cache WRITE] Cached ${effectiveFilepath} for repo ${effectiveRepoId} (commit ${currentCommitHash.substring(0,7)}) to ${cacheFilename}`);
       } catch (cacheWriteError) {
         console.warn(`[Cache Write WARN] Failed to write cache file ${cacheFilename}:`, cacheWriteError);
@@ -158,10 +155,10 @@ router.get('/view', async (req, res) => {
     }
     // --- END CACHE WRITE LOGIC ---
     
-    res.json(proseMirrorJson);
+    res.json(resultPayload); // Return the payload { prosemirrorJson, comments }
 
   } catch (error) {
-    console.error('Error getting document view:', error.message);
+    console.error('Error getting document view:', error.message, error.stack); // Added error.stack for more details
     if (error.message.includes('share token') || error.message.includes('access denied')) {
       return res.status(403).json({ error: error.message });
     }
