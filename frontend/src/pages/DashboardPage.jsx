@@ -181,6 +181,7 @@ function DashboardPage() {
       </main>
       {sharingFile && (
           <ShareModal 
+            userId={user.id}
             docId={sharingFile.docId} 
             docFilepath={sharingFile.filepath} 
             repoId={sharingFile.repoId} 

@@ -5,7 +5,7 @@
   }
   .modal-content {
     background-color: white; padding: 2rem; border-radius: 8px;
-    width: 90%; max-width: 500px; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    width: 90%; max-width: 700px; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
   }
   .modal-content form { display: flex; gap: 10px; margin-top: 1rem; }
   .modal-content input { flex-grow: 1; padding: 8px; }
