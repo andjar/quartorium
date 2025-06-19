@@ -38,9 +38,32 @@ function parseQmd(qmdString) {
         } else if (line.trim() === codeFence || line.trim() === '```') {
           const raw = currentBlockLines.join('\n');
           // Extract the label to use as the key. This is the crucial link.
-          const labelMatch = raw.match(/#\|\s*label:\s*(\S+)/);
-          if (labelMatch) {
-            const key = labelMatch[1].trim();
+          // Try multiple label formats:
+          let key = null;
+          
+          // Format 1: #| label: fig-cars
+          const labelMatch1 = raw.match(/#\|\s*label:\s*(\S+)/);
+          if (labelMatch1) {
+            key = labelMatch1[1].trim();
+          }
+          
+          // Format 2: {r, label="fig-cars"} (standard Quarto format)
+          if (!key) {
+            const labelMatch2 = raw.match(/label\s*=\s*["']([^"']+)["']/);
+            if (labelMatch2) {
+              key = labelMatch2[1].trim();
+            }
+          }
+          
+          // Format 3: {r, label=fig-cars} (without quotes)
+          if (!key) {
+            const labelMatch3 = raw.match(/label\s*=\s*([a-zA-Z0-9_-]+)/);
+            if (labelMatch3) {
+              key = labelMatch3[1].trim();
+            }
+          }
+          
+          if (key) {
             blockMap.set(key, raw);
           }
           currentBlockLines = [];
