@@ -7,12 +7,16 @@ import debounce from 'lodash.debounce';
 import QuartoBlock from '../components/editor/QuartoBlock';
 import Citation from '../components/editor/Citation';
 import FigureReference from '../components/editor/FigureReference';
+import CommentMark from '../components/editor/CommentMark';
+import CommentSidebar from '../components/editor/CommentSidebar'; // Import CommentSidebar
 import './EditorPage.css';
 
 function CollabEditorPage() {
   const { shareToken } = useParams();
   const [status, setStatus] = useState('Loading...');
   const [error, setError] = useState('');
+  const [comments, setComments] = useState([]);
+  const [activeCommentId, setActiveCommentId] = useState(null);
 
   // --- Auto-save logic ---
   const saveDocument = useCallback(
@@ -22,6 +26,8 @@ function CollabEditorPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(doc),
+        // TODO: When backend supports it, send comments as well:
+        // body: JSON.stringify({ document: doc, comments: comments }),
       })
       .then(res => {
         if (!res.ok) throw new Error('Save failed');
@@ -45,7 +51,11 @@ function CollabEditorPage() {
       }),
       QuartoBlock,
       Citation,
-      FigureReference
+      FigureReference,
+      CommentMark.configure({
+        HTMLAttributes: { class: 'comment-mark' }, // For styling
+        onCommentClick: (commentId) => setActiveCommentId(commentId),
+      }),
     ],
     content: {
       type: 'doc',
@@ -61,11 +71,17 @@ function CollabEditorPage() {
   useEffect(() => {
     if (!editor || !shareToken) return;
 
+    // Simulate loading comments with the document if they were persisted
+    // For now, comments are local and start empty
+    // if (data.comments) setComments(data.comments);
+
     fetch(`/api/collab/${shareToken}`)
       .then(res => res.ok ? res.json() : Promise.reject(res))
       .then(data => {
         // The backend now returns ProseMirror JSON with block keys
         // and includes metadata/bibliography blocks
+        // TODO: When backend supports it, load comments as well:
+        // if (data.comments) setComments(data.comments);
         editor.commands.setContent(data);
         setStatus('Loaded');
       })
@@ -82,17 +98,42 @@ function CollabEditorPage() {
       });
   }, [editor, shareToken]);
 
+  const addComment = () => {
+    if (!editor || !editor.state.selection.from || editor.state.selection.empty) {
+      alert('Please select text to comment on.');
+      return;
+    }
+
+    const commentText = prompt('Enter your comment:');
+    if (commentText) {
+      const newCommentId = `comment-${Date.now()}`;
+      setComments([...comments, { id: newCommentId, text: commentText }]);
+      // Important: We need to ensure this doesn't trigger a save if comments are local
+      // For now, we'll assume comments are not part of the collaborative doc directly
+      editor.chain().focus().setComment(newCommentId).run();
+      setActiveCommentId(newCommentId);
+    }
+  };
+
   return (
     <div className="editor-page-container">
       <header className="editor-header">
         <h3>Quartorium Collaborative Editor</h3>
         <div>
+          <button onClick={addComment} style={{ marginRight: '1rem' }}>Add Comment</button>
           <span>Status: {status}</span>
         </div>
       </header>
-      <main className="editor-content-area">
-        {error ? <p style={{color: 'red'}}>{error}</p> : <EditorContent editor={editor} />}
-      </main>
+      <div className="editor-main-area">
+        <main className="editor-content-area">
+          {error ? <p style={{color: 'red'}}>{error}</p> : <EditorContent editor={editor} />}
+        </main>
+        <CommentSidebar
+          comments={comments}
+          activeCommentId={activeCommentId}
+          onCommentSelect={setActiveCommentId} // Allow clicking on sidebar to activate
+        />
+      </div>
     </div>
   );
 }
