@@ -70,3 +70,48 @@
   border: 1px dashed #ccc;   /* Subtle border */
   font-style: italic; /* Optional: further distinguish from main content */
 }
+
+/* Styles for the new Metadata Block */
+.metadata-block .quarto-block-output {
+  padding: 1rem 1.5rem;
+  background-color: #fafafa; /* A very light grey for subtlety */
+}
+
+.metadata-block h1 {
+  font-size: 1.8rem;
+  font-weight: 600;
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 0.5rem;
+}
+
+.metadata-block .authors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem; /* Row and column gap */
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.metadata-block .author {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.metadata-block .author-name {
+  font-weight: 500;
+}
+
+.metadata-block .author-affiliations {
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.metadata-block sup {
+  color: #c0392b;
+  font-weight: bold;
+  font-size: 0.9rem;
+  cursor: help;
+}

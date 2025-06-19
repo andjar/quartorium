@@ -3,9 +3,41 @@ import { NodeViewWrapper } from '@tiptap/react';
 import './QuartoBlockNodeView.css';
 
 const QuartoBlockNodeView = ({ node }) => {
-  // Destructure all potential attributes, including the new 'language'
-  const { code, language, htmlOutput, figId, figCaption, figLabel } = node.attrs;
-  const [isCodeVisible, setIsCodeVisible] = useState(false); // Default to hidden
+  // Destructure all potential attributes, including the new 'metadata'
+  const { code, language, htmlOutput, figId, figCaption, figLabel, metadata } = node.attrs;
+  const [isCodeVisible, setIsCodeVisible] = useState(false);
+
+  // If metadata is present, render the metadata view.
+  if (metadata) {
+    const { title, authors } = metadata;
+    return (
+      <NodeViewWrapper className="quarto-block-wrapper metadata-block">
+        <div className="quarto-block">
+          <div className="quarto-block-header">
+            <span>{`{metadata}`}</span>
+          </div>
+          <div className="quarto-block-output">
+            {title && <h1>{title}</h1>}
+            {authors && authors.length > 0 && (
+              <div className="authors">
+                {authors.map((author, index) => (
+                  <div key={index} className="author">
+                    <span className="author-name">{author.name}</span>
+                    {author.isCorresponding && <sup title="Corresponding Author">*</sup>}
+                    {author.affiliations && author.affiliations.length > 0 && (
+                       <span className="author-affiliations">
+                         ({author.affiliations.map(aff => aff.text).join(', ')})
+                       </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </NodeViewWrapper>
+    );
+  }
 
   // The presence of a `figLabel` is the most reliable indicator of a figure.
   const isFigure = !!figLabel;

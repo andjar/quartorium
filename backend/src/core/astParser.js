@@ -410,6 +410,25 @@ async function jatsToProseMirrorJSON(jatsXml, repoId, commitHash, docFilepath) {
         const bodyEl = articleToParse.querySelector('body');
         if (!bodyEl) throw new Error("Could not find <body> in the selected article content.");
         const content = transformBodyNodes(bodyEl.childNodes, repoId, context, commitHash, docFilepath);
+        
+        // Create and prepend a metadata block if metadata is available
+        const finalContent = [];
+        if (metadata && Object.keys(metadata).length > 0 && (metadata.title || metadata.authors?.length > 0)) {
+            finalContent.push({
+                type: 'quartoBlock',
+                attrs: {
+                    metadata: metadata,
+                    // Set other attributes to default/null values
+                    htmlOutput: '',
+                    code: '',
+                    language: 'metadata',
+                    figId: '',
+                    figCaption: '',
+                    figLabel: ''
+                }
+            });
+        }
+        finalContent.push(...content);
 
         // 6. Assemble the final ProseMirror document
         return {
@@ -418,7 +437,7 @@ async function jatsToProseMirrorJSON(jatsXml, repoId, commitHash, docFilepath) {
                 metadata: metadata,
                 bibliography: context.references
             },
-            content: content,
+            content: finalContent,
         };
     } catch (error) {
         console.error("Error transforming JATS XML to ProseMirror JSON:", error);

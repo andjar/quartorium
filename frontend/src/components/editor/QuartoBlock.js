@@ -11,10 +11,11 @@ export default Node.create({
     return {
       htmlOutput: { default: '' },
       code: { default: '' },
-      language: { default: null }, // <-- ADD THIS LINE
+      language: { default: null },
       figId: { default: '' },
       figCaption: { default: '' },
       figLabel: { default: '' },
+      metadata: { default: null },
     };
   },
 
