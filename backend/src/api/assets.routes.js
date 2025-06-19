@@ -4,7 +4,8 @@ const fs = require('fs');
 const db = require('../db/sqlite'); // Use the shared db connection
 
 const router = express.Router();
-const REPOS_DIR = path.join(__dirname, '../../repos');
+const REPOS_DIR = path.join(__dirname, '../../repos'); // Kept for potential other uses
+const CACHE_DIR = path.join(__dirname, '../../cache');
 
 // This endpoint is public but the paths are unguessable.
 // In a production app, you might add more security here.
@@ -27,14 +28,16 @@ router.get('/:repoId/:assetPath(*)', (req, res) => {
       return res.status(404).send('Repository not found');
     }
     
-    const repoFullName = row.full_name;
+    const repoFullName = row.full_name; // Still needed for validation that repoId is legit, but not for path
     
-    // Construct the asset path using the repository's full name
-    const fullAssetPath = path.join(REPOS_DIR, repoFullName, assetPath);
+    // Construct the asset path using CACHE_DIR, repoId, and the assetPath from the URL
+    // assetPath is expected to be: {commitHash}/{originalDocName_files}/{filename}
+    const fullAssetPath = path.join(CACHE_DIR, 'assets', repoId, assetPath);
 
     // Basic path traversal protection
     const safePath = path.resolve(fullAssetPath);
-    if (!safePath.startsWith(path.resolve(REPOS_DIR))) {
+    // Ensure the path is within the designated cache assets directory
+    if (!safePath.startsWith(path.resolve(path.join(CACHE_DIR, 'assets')))) {
       return res.status(403).send('Forbidden');
     }
 

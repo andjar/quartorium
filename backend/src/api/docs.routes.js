@@ -132,10 +132,10 @@ router.get('/view', async (req, res) => {
     }
 
     // Render the document to JATS
-    const { jatsXml } = await renderToJATS(fullFilepath, projectDir);
+    const { jatsXml, assetsCachePath } = await renderToJATS(fullFilepath, projectDir, effectiveRepoId, currentCommitHash);
     
     // Transform the JATS to ProseMirror JSON
-    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, effectiveRepoId);
+    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, effectiveRepoId, currentCommitHash, effectiveFilepath);
 
     // --- START CACHE WRITE LOGIC ---
     if (currentCommitHash && cacheFilename) { // Only attempt to write if cache setup was successful

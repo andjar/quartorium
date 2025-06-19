@@ -2,15 +2,18 @@ const { exec } = require('child_process');
 const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
+const CACHE_DIR = path.join(__dirname, '../../cache');
 const { parseStringPromise } = require('xml2js');
 
 /**
  * Executes `quarto render` to JATS format and reads the resulting XML.
  * @param {string} qmdFilepath - The absolute path to the source .qmd file.
  * @param {string} projectDir - The root directory of the cloned project.
- * @returns {Promise<{jatsXml: string, assetsDir: string}>} - The parsed JATS XML string and the path to the assets directory.
+ * @param {string} repoId - The repository ID.
+ * @param {string} commitHash - The commit hash.
+ * @returns {Promise<{jatsXml: string, assetsCachePath: string | null}>} - The parsed JATS XML string and the path to the cached assets directory.
  */
-async function renderToJATS(qmdFilepath, projectDir) {
+async function renderToJATS(qmdFilepath, projectDir, repoId, commitHash) {
   // 1. Create a temporary directory to work in.
   const tempRenderDir = await fs.mkdtemp(path.join(os.tmpdir(), 'quartorium-render-'));
   
@@ -46,15 +49,24 @@ async function renderToJATS(qmdFilepath, projectDir) {
     const outputDir = path.dirname(outputXmlPath);
     const assetsDir = path.join(outputDir, `${path.parse(inputFilename).name}_files`);
     
-    // 8. Copy the rendered assets back to the repository directory so they can be served
-    const repoAssetsDir = path.join(projectDir, `${path.parse(inputFilename).name}_files`);
+    // 8. Copy the rendered assets to the cache directory.
+    const originalDocNameFiles = path.parse(qmdFilepath).name + '_files';
+    const newAssetsCachePath = path.join(CACHE_DIR, 'assets', repoId, commitHash, originalDocNameFiles);
+    let assetsCachePath = null;
+
     try {
-      await fs.cp(assetsDir, repoAssetsDir, { recursive: true });
-    } catch (copyError) {
-      // It's okay if this fails, not all documents have assets.
+      await fs.access(assetsDir); // Check if temporary assets directory exists
+      await fs.mkdir(newAssetsCachePath, { recursive: true });
+      await fs.cp(assetsDir, newAssetsCachePath, { recursive: true });
+      assetsCachePath = newAssetsCachePath;
+      console.log(`Assets copied from ${assetsDir} to ${newAssetsCachePath}`);
+    } catch (error) {
+      // This error means the assets directory doesn't exist (e.g., no figures) or failed to copy.
+      console.log(`No assets directory found at ${assetsDir}, or error copying: ${error.message}. This might be normal if the document has no figures.`);
+      // assetsCachePath remains null
     }
     
-    return { jatsXml, assetsDir: repoAssetsDir };
+    return { jatsXml, assetsCachePath };
 
   } catch (e) {
     console.error("Failed during JATS rendering process.", e);
@@ -181,9 +193,11 @@ function parseFront(frontElement, context) {
  * @param {NodeList} nodes - A list of DOM nodes (element.childNodes).
  * @param {string} repoId - The repository ID for asset path rewriting.
  * @param {object} context - The context object for resolving xrefs.
+ * @param {string} commitHash - The commit hash.
+ * @param {string} docFilepath - The path to the original document file.
  * @returns {Array} An array of ProseMirror nodes.
  */
-function transformBodyNodes(nodes, repoId, context) {
+function transformBodyNodes(nodes, repoId, context, commitHash, docFilepath) {
     const pmNodes = [];
 
     nodes.forEach(node => {
@@ -202,7 +216,7 @@ function transformBodyNodes(nodes, repoId, context) {
                 case 'p':
                     pmNodes.push({
                         type: 'paragraph',
-                        content: transformBodyNodes(el.childNodes, repoId, context)
+                        content: transformBodyNodes(el.childNodes, repoId, context, commitHash, docFilepath)
                     });
                     break;
                 case 'xref':
@@ -235,7 +249,7 @@ function transformBodyNodes(nodes, repoId, context) {
                         const language = codeEl ? codeEl.getAttribute('language') : null;
                         
                         if (figEl) {
-                            pmNodes.push(processFig(figEl, repoId, code, language));
+                            pmNodes.push(processFig(figEl, repoId, code, language, commitHash, docFilepath));
                         } else if (code) {
                             pmNodes.push({
                                 type: 'code_block',
@@ -253,11 +267,11 @@ function transformBodyNodes(nodes, repoId, context) {
                             });
                             titleEl.remove();
                         }
-                        pmNodes.push(...transformBodyNodes(el.childNodes, repoId, context));
+                        pmNodes.push(...transformBodyNodes(el.childNodes, repoId, context, commitHash, docFilepath));
                     }
                     break;
                 case 'fig':
-                    pmNodes.push(processFig(el, repoId, '', null));
+                    pmNodes.push(processFig(el, repoId, '', null, commitHash, docFilepath));
                     break;
             }
         }
@@ -271,9 +285,12 @@ function transformBodyNodes(nodes, repoId, context) {
  * @param {string} repoId - The ID of the repository for asset rewriting.
  * @param {string} code - The source code associated with this figure.
  * @param {string|null} language - The language of the source code.
+ * @param {string} commitHash - The commit hash.
+ * @param {string} docFilepath - The path to the original document file.
  * @returns {object} A ProseMirror quartoBlock node.
  */
-function processFig(figElement, repoId, code, language) {
+function processFig(figElement, repoId, code, language, commitHash, docFilepath) {
+  const originalDocNameFiles = path.parse(docFilepath).name + '_files';
   const captionEl = figElement.querySelector('caption');
   let figLabel = '';
   let figCaption = '';
@@ -305,7 +322,7 @@ function processFig(figElement, repoId, code, language) {
 
   const graphicEl = figElement.querySelector('graphic');
   const imageSrc = graphicEl?.getAttribute('xlink:href') || graphicEl?.getAttribute('href') || '';
-  const rewrittenSrc = imageSrc ? `/api/assets/${repoId}/${imageSrc}` : '';
+  const rewrittenSrc = imageSrc ? `/api/assets/${repoId}/${commitHash}/${originalDocNameFiles}/${imageSrc}` : '';
   // Use the full caption text for the alt attribute for accessibility.
   const altText = `${figLabel} ${figCaption}`.trim();
   const imageHtml = rewrittenSrc ? `<img src="${rewrittenSrc}" alt="${altText}" style="max-width: 100%; height: auto;" />` : '';
@@ -327,9 +344,11 @@ function processFig(figElement, repoId, code, language) {
  * Transforms a JATS XML string into a ProseMirror JSON document using JSDOM.
  * @param {string} jatsXml - The JATS XML content.
  * @param {string} repoId - The repository ID for asset path rewriting.
+ * @param {string} commitHash - The commit hash.
+ * @param {string} docFilepath - The path to the original document file.
  * @returns {Promise<object>} The ProseMirror JSON document.
  */
-async function jatsToProseMirrorJSON(jatsXml, repoId) {
+async function jatsToProseMirrorJSON(jatsXml, repoId, commitHash, docFilepath) {
     try {
         // 1. Parse the XML string into a DOM.
         // The contentType is crucial for parsing XML correctly, not as HTML.
@@ -351,7 +370,7 @@ async function jatsToProseMirrorJSON(jatsXml, repoId) {
         // 5. Parse Body Content
         const bodyEl = articleToParse.querySelector('body');
         if (!bodyEl) throw new Error("Could not find <body> in the selected article content.");
-        const content = transformBodyNodes(bodyEl.childNodes, repoId, context);
+        const content = transformBodyNodes(bodyEl.childNodes, repoId, context, commitHash, docFilepath);
 
         // 6. Assemble the final ProseMirror document
         return {
