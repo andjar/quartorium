@@ -12,36 +12,29 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
   const [newBranchName, setNewBranchName] = useState('');
   const [collaborationBranches, setCollaborationBranches] = useState([]);
 
-  // Placeholder function to fetch collaboration branches
-  const fetchCollaborationBranches = async (currentDocId) => {
-    if (!currentDocId) return;
-    // This is a placeholder. In the future, this would fetch branches for the document.
-    // For example:
-    // try {
-    //   const response = await fetch(`/api/docs/${currentDocId}/branches`, { credentials: 'include' });
-    //   if (response.ok) {
-    //     const branches = await response.json();
-    //     setCollaborationBranches(branches);
-    //     if (branches.length > 0) {
-    //       setSelectedBranch(branches[0].name); // Default to the first branch
-    //     }
-    //   } else {
-    //     console.error('Failed to fetch collaboration branches');
-    //     setCollaborationBranches([]);
-    //   }
-    // } catch (error) {
-    //   console.error('Error fetching collaboration branches:', error);
-    //   setCollaborationBranches([]);
-    // }
-    console.log(`Placeholder: Fetching branches for docId ${currentDocId}`);
-    // Mock data for now:
-    const mockBranches = [
-      { id: '1', name: 'feat/existing-branch-1' },
-      { id: '2', name: 'collab/userA-changes' },
-    ];
-    setCollaborationBranches(mockBranches);
-    if (mockBranches.length > 0) {
-      setSelectedBranch(mockBranches[0].name);
+  // Fetch collaboration branches from the repository
+  const fetchCollaborationBranches = async (currentRepoId) => {
+    if (!currentRepoId) return;
+    
+    try {
+      const response = await fetch(`/api/repos/${currentRepoId}/branches`, { credentials: 'include' });
+      if (response.ok) {
+        const branches = await response.json();
+        setCollaborationBranches(branches);
+        // Set "main" as default if it exists, otherwise use the first branch
+        const mainBranch = branches.find(branch => branch.name === 'main');
+        if (mainBranch) {
+          setSelectedBranch('main');
+        } else if (branches.length > 0) {
+          setSelectedBranch(branches[0].name);
+        }
+      } else {
+        console.error('Failed to fetch collaboration branches');
+        setCollaborationBranches([]);
+      }
+    } catch (error) {
+      console.error('Error fetching collaboration branches:', error);
+      setCollaborationBranches([]);
     }
   };
 
@@ -52,8 +45,8 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
       .then(res => res.ok ? res.json() : [])
       .then(setExistingLinks);
 
-    fetchCollaborationBranches(docId);
-  }, [docId]);
+    fetchCollaborationBranches(repoId);
+  }, [docId, repoId]);
 
   const handleCreateLink = (e) => {
     e.preventDefault();
@@ -88,7 +81,7 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
         // Refresh the list of links
         fetch(`/api/docs/${docId}/shares`, { credentials: 'include' }).then(res => res.json()).then(setExistingLinks);
         // Potentially refresh branches if a new one was created, though the current placeholder won't show it
-        fetchCollaborationBranches(docId);
+        fetchCollaborationBranches(repoId);
     })
     .catch(async (res) => {
         // It's good practice to check if res has a json method before calling it
@@ -109,10 +102,9 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
             <ul>
               {existingLinks.map(link => (
                 <li key={link.id}>
-                  <span>{link.collaborator_label || 'Unnamed Link'}</span> {/* Added fallback for label */}
+                  <span>{link.collaborator_label || 'Unnamed Link'}</span>
                   <div>
                     <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/collab/${link.share_token}`)}>Copy Link</button>
-                    {/* Assuming review link might use share_token or a specific ID */}
                     <Link to={`/review/${link.share_token || link.id}`}>
                       <button>Review</button>
                     </Link>
@@ -120,7 +112,7 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
                 </li>
               ))}
             </ul>
-          ) : <p>No share links created yet.</p>}
+          ) : <p style={{ padding: '16px', margin: 0, color: '#6b7280', fontStyle: 'italic' }}>No share links created yet.</p>}
         </div>
 
         <form onSubmit={handleCreateLink}>
@@ -140,7 +132,7 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
             <select
               id="existingBranch"
               value={selectedBranch}
-              onChange={(e) => { setSelectedBranch(e.target.value); setNewBranchName(''); }} // Clear new branch name if existing is selected
+              onChange={(e) => { setSelectedBranch(e.target.value); setNewBranchName(''); }}
               disabled={collaborationBranches.length === 0 || !!newBranchName}
             >
               <option value="">-- Select a branch --</option>
@@ -150,7 +142,7 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
             </select>
           </div>
 
-          <p className="or-divider">OR</p>
+          <p className="or-divider"><span>OR</span></p>
 
           <div className="form-group">
             <label htmlFor="newBranchName">Create New Branch</label>
@@ -158,14 +150,23 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
               id="newBranchName"
               type="text"
               value={newBranchName}
-              onChange={(e) => { setNewBranchName(e.target.value); setSelectedBranch(''); }} // Clear selected branch if new one is typed
+              onChange={(e) => { setNewBranchName(e.target.value); setSelectedBranch(''); }}
               placeholder="E.g., review-feature-xyz"
             />
           </div>
 
-          {/* userId would be passed in props or from context, not typically a hidden input here unless no other way */}
-
-          <button type="submit">Create Link</button>
+          <button type="submit" style={{ 
+            width: '100%', 
+            padding: '12px', 
+            backgroundColor: '#3b82f6', 
+            color: 'white', 
+            border: 'none', 
+            borderRadius: '4px', 
+            fontSize: '14px', 
+            fontWeight: '500', 
+            cursor: 'pointer',
+            marginTop: '1rem'
+          }}>Create Link</button>
         </form>
 
         {error && <p className="error-text">{error}</p>}

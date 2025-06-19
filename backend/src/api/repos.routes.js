@@ -137,4 +137,54 @@ router.get('/:repoId/qmd-files', async (req, res) => {
   });
 });
 
+// GET /api/repos/:repoId/branches - List all branches in a repo
+router.get('/:repoId/branches', async (req, res) => {
+  db.get('SELECT * FROM repositories WHERE id = ? AND user_id = ?', [req.params.repoId, req.user.id], async (err, repo) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!repo) return res.status(404).json({ error: 'Repository not found' });
+
+    const projectDir = path.join(REPOS_DIR, repo.full_name);
+    const url = `https://github.com/${repo.full_name}.git`;
+
+    try {
+      // Clone will do nothing if the repo already exists
+      await git.clone({
+        fs,
+        http,
+        dir: projectDir,
+        url,
+        singleBranch: false, // We need all branches for this endpoint
+        depth: 1,
+        onAuth: () => ({ username: req.user.github_token }),
+      });
+
+      // Fetch all branches from remote
+      await git.fetch({
+        fs,
+        http,
+        dir: projectDir,
+        onAuth: () => ({ username: req.user.github_token }),
+      });
+
+      // List all branches (both local and remote)
+      const branches = await git.listBranches({
+        fs,
+        dir: projectDir,
+        remote: 'origin'
+      });
+
+      // Format branches for frontend consumption
+      const formattedBranches = branches.map(branchName => ({
+        id: branchName, // Use branch name as ID for simplicity
+        name: branchName.replace('origin/', '') // Remove 'origin/' prefix for cleaner display
+      }));
+
+      res.json(formattedBranches);
+    } catch (error) {
+      console.error('Git operation failed:', error);
+      res.status(500).json({ error: 'Failed to fetch repository branches.' });
+    }
+  });
+});
+
 module.exports = router;
