@@ -9,9 +9,12 @@ export default Node.create({
 
   addAttributes() {
     return {
+      htmlOutput: { default: '' },
       code: { default: '' },
-      chunkOptions: { default: '' },
-      htmlOutput: { default: '<div>Loading...</div>' },
+      language: { default: null }, // <-- ADD THIS LINE
+      figId: { default: '' },
+      figCaption: { default: '' },
+      figLabel: { default: '' },
     };
   },
 

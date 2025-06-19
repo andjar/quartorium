@@ -67,3 +67,16 @@
   .ProseMirror p + p {
     margin-top: 1.2em; /* Add space between paragraphs */
   }
+
+  /* Style for the new citation node */
+span[data-type="citation"] {
+  background-color: #e0e0ff;
+  border-radius: 3px;
+  padding: 1px 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+span[data-type="citation"]:hover {
+  background-color: #c0c0ff;
+}

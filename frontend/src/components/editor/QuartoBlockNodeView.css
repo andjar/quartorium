@@ -7,11 +7,32 @@
 }
 
 .quarto-block-header {
-  background-color: #eee;
-  padding: 4px 8px;
+  background-color: #f0f0f0;
+  padding: 5px 10px;
   font-family: monospace;
-  font-size: 0.8rem;
-  color: #555;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #ddd;
+}
+
+.code-toggle-button {
+  background-color: #e0e0e0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: sans-serif;
+  font-size: 0.8em;
+}
+
+.code-toggle-button:hover {
+  background-color: #d0d0d0;
+}
+
+.quarto-block-code {
+  background-color: #f8f8f8;
+  border-bottom: 1px solid #ddd;
 }
 
 .quarto-block-output {

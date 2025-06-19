@@ -5,6 +5,8 @@ import Link from '@tiptap/extension-link';
 import StarterKit from '@tiptap/starter-kit';
 import debounce from 'lodash.debounce';
 import QuartoBlock from '../components/editor/QuartoBlock';
+import Citation from '../components/editor/Citation';
+import FigureReference from '../components/editor/FigureReference';
 import './EditorPage.css';
 
 function CollabEditorPage() {
@@ -40,7 +42,9 @@ function CollabEditorPage() {
         // You might want to ensure that links from StarterKit are disabled if you add Link separately
         // Or configure StarterKit: StarterKit.configure({ link: { /* options */ }})
       }),
-      QuartoBlock
+      QuartoBlock,
+      Citation,
+      FigureReference
     ],
     content: '',
     editable: true,

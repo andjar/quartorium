@@ -17,6 +17,7 @@
     "http-fs": "^0.0.11",
     "isomorphic-git": "^1.30.3",
     "js-yaml": "^4.1.0",
+    "jsdom": "^26.1.0",
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
     "remark": "^15.0.1",
