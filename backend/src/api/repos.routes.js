@@ -57,16 +57,16 @@ router.post('/', async (req, res) => {
     });
 
     const repoData = githubResponse.data;
-    const { id, name, private: is_private } = repoData;
+    const { id, name, private: is_private, default_branch } = repoData;
     
-    const sql = 'INSERT INTO repositories (user_id, github_repo_id, name, full_name, is_private) VALUES (?, ?, ?, ?, ?)';
-    db.run(sql, [req.user.id, id, name, full_name, is_private], function(err) {
+    const sql = 'INSERT INTO repositories (user_id, github_repo_id, name, full_name, is_private, main_branch) VALUES (?, ?, ?, ?, ?, ?)';
+    db.run(sql, [req.user.id, id, name, full_name, is_private, default_branch], function(err) {
       if (err) {
         // This is likely a UNIQUE constraint violation if the repo is already added
         console.error('DB error inserting repo:', err);
         return res.status(409).json({ error: 'Repository has already been added.' });
       }
-      res.status(201).json({ id: this.lastID, name, full_name });
+      res.status(201).json({ id: this.lastID, name, full_name, main_branch: default_branch });
     });
   } catch (error) {
     console.error("Error adding repo:", error.response ? error.response.data : error.message);

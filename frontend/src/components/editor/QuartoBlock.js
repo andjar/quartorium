@@ -9,6 +9,7 @@ export default Node.create({
 
   addAttributes() {
     return {
+      blockKey: { default: null },
       htmlOutput: { default: '' },
       code: { default: '' },
       language: { default: null },

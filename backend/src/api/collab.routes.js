@@ -6,7 +6,7 @@ const fs = require('fs/promises');
 const matter = require('gray-matter'); // For YAML extraction
 const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser'); // Keep for GET, might remove if GET switches path
 // const { proseMirrorJSON_to_qmd } = require('../core/astSerializer'); // Replaced by new serializer
-const { proseMirrorToQmd } = require('../core/quartoSerializer'); // New serializer
+const { proseMirrorJSON_to_qmd } = require('../core/astSerializer'); // Use improved serializer
 // Import the QMD parser to create blockMap - still needed for GET /:shareToken if rendering from branch
 const { parseQmd } = require('../core/qmdBlockParser');
 
@@ -301,7 +301,7 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
     }
 
 
-    const newQmdContent = proseMirrorToQmd(parsedProsemirrorJson, parsedCommentsArray, yamlString);
+    const newQmdContent = proseMirrorJSON_to_qmd(parsedProsemirrorJson, currentOriginalQmdContent, parsedCommentsArray);
 
     // 6. Write and commit to collab branch
     const fullCollabFilepath = path.join(projectDir, collabFilepath);

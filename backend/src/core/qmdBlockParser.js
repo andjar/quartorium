@@ -1,17 +1,24 @@
 /**
  * Parses a QMD string into a map of its special blocks (YAML and code chunks).
  * The map's keys are the block labels (e.g., 'fig-plot') and values are the raw block content.
+ * Enhanced to handle more block types and provide better block identification.
+ * 
  * @param {string} qmdString - The raw content of the .qmd file.
- * @returns {{ blockMap: Map<string, string> }} An object containing the map.
+ * @returns {{ blockMap: Map<string, string>, blockOrder: Array<string> }} An object containing the map and order.
  */
 function parseQmd(qmdString) {
     const lines = qmdString.split('\n');
     const blockMap = new Map();
+    const blockOrder = []; // Track the order of blocks for potential reconstruction
   
     let currentBlockLines = [];
     let inYaml = false;
     let inCode = false;
     let codeFence = '';
+    let currentBlockKey = null;
+    let blockMetadata = {}; // Store metadata found within the block
+  
+    console.log('Parsing QMD with', lines.length, 'lines');
   
     for (const line of lines) {
       // Handle YAML frontmatter
@@ -19,12 +26,17 @@ function parseQmd(qmdString) {
         currentBlockLines.push(line);
         if (!inYaml) {
           inYaml = true;
+          currentBlockKey = '__YAML_BLOCK__';
+          console.log('Found YAML start, key:', currentBlockKey);
         } else {
           const raw = currentBlockLines.join('\n');
-          // Use a consistent, special key for the YAML block
-          blockMap.set('__YAML_BLOCK__', raw);
+          blockMap.set(currentBlockKey, raw);
+          blockOrder.push(currentBlockKey);
+          console.log('Found YAML end, stored as:', currentBlockKey);
+          console.log('YAML content:', raw.substring(0, 200) + '...');
           currentBlockLines = [];
           inYaml = false;
+          currentBlockKey = null;
         }
         continue;
       }
@@ -35,41 +47,95 @@ function parseQmd(qmdString) {
         if (!inCode) {
           inCode = true;
           codeFence = line.trim();
-        } else if (line.trim() === codeFence || line.trim() === '```') {
-          const raw = currentBlockLines.join('\n');
+          blockMetadata = {}; // Reset metadata for new block
+          
           // Extract the label to use as the key. This is the crucial link.
           // Try multiple label formats:
           let key = null;
           
-          // Format 1: #| label: fig-cars
-          const labelMatch1 = raw.match(/#\|\s*label:\s*(\S+)/);
+          // Format 1: {r, label="fig-cars"} (standard Quarto format)
+          const labelMatch1 = line.match(/label\s*=\s*["']([^"']+)["']/);
           if (labelMatch1) {
             key = labelMatch1[1].trim();
           }
           
-          // Format 2: {r, label="fig-cars"} (standard Quarto format)
+          // Format 2: {r, label=fig-cars} (without quotes)
           if (!key) {
-            const labelMatch2 = raw.match(/label\s*=\s*["']([^"']+)["']/);
+            const labelMatch2 = line.match(/label\s*=\s*([a-zA-Z0-9_-]+)/);
             if (labelMatch2) {
               key = labelMatch2[1].trim();
             }
           }
           
-          // Format 3: {r, label=fig-cars} (without quotes)
+          // Format 3: {r fig-cars} (shorthand format)
           if (!key) {
-            const labelMatch3 = raw.match(/label\s*=\s*([a-zA-Z0-9_-]+)/);
+            const labelMatch3 = line.match(/\{([^}]+)\}/);
             if (labelMatch3) {
-              key = labelMatch3[1].trim();
+              const options = labelMatch3[1];
+              const parts = options.split(/\s+/);
+              // Look for a part that looks like a figure label
+              for (const part of parts) {
+                if (part.startsWith('fig-') || part.startsWith('tbl-') || part.startsWith('eq-')) {
+                  key = part;
+                  break;
+                }
+              }
             }
           }
           
-          if (key) {
-            blockMap.set(key, raw);
+          // If no specific label found, generate a generic key
+          if (!key) {
+            key = `__CODE_BLOCK_${blockOrder.length}__`;
+          }
+          
+          currentBlockKey = key;
+          console.log('Found code block start, key:', currentBlockKey);
+        } else if (line.trim() === codeFence || line.trim() === '```') {
+          const raw = currentBlockLines.join('\n');
+          if (currentBlockKey) {
+            blockMap.set(currentBlockKey, raw);
+            blockOrder.push(currentBlockKey);
+            console.log('Found code block end, stored as:', currentBlockKey);
+            console.log('Code content:', raw.substring(0, 100) + '...');
           }
           currentBlockLines = [];
           inCode = false;
+          currentBlockKey = null;
+          blockMetadata = {};
         }
         continue;
+      }
+  
+      // Handle Quarto cell metadata within code blocks
+      if (inCode && line.trim().startsWith('#|')) {
+        const metadataMatch = line.match(/#\|\s*(\w+):\s*(.+)/);
+        if (metadataMatch) {
+          const [, key, value] = metadataMatch;
+          blockMetadata[key.trim()] = value.trim();
+          
+          // If this is a label, update the block key
+          if (key.trim() === 'label') {
+            const labelValue = value.trim().replace(/["']/g, ''); // Remove quotes
+            if (labelValue && currentBlockKey) {
+              // Update the block key to use the label
+              const oldKey = currentBlockKey;
+              currentBlockKey = labelValue;
+              
+              // If we already have content for the old key, move it to the new key
+              if (blockMap.has(oldKey)) {
+                const content = blockMap.get(oldKey);
+                blockMap.delete(oldKey);
+                blockMap.set(currentBlockKey, content);
+                // Update the order array
+                const oldIndex = blockOrder.indexOf(oldKey);
+                if (oldIndex !== -1) {
+                  blockOrder[oldIndex] = currentBlockKey;
+                }
+              }
+              console.log('Updated code block key from', oldKey, 'to', currentBlockKey);
+            }
+          }
+        }
       }
   
       if (inYaml || inCode) {
@@ -77,7 +143,16 @@ function parseQmd(qmdString) {
       }
     }
   
-    return { blockMap };
+    // Handle any remaining block content
+    if (currentBlockLines.length > 0 && currentBlockKey) {
+      const raw = currentBlockLines.join('\n');
+      blockMap.set(currentBlockKey, raw);
+      blockOrder.push(currentBlockKey);
+      console.log('Stored remaining block as:', currentBlockKey);
+    }
+  
+    console.log('Final blockMap keys:', Array.from(blockMap.keys()));
+    return { blockMap, blockOrder };
   }
   
   module.exports = { parseQmd };

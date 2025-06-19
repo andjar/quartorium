@@ -10,11 +10,23 @@ function createReferenceMaps(pmDoc) {
     const figMap = new Map();
 
     // Create citation map (e.g., "ref-knuth84-nb-article" -> "knuth84")
-    const bibliography = pmDoc.attrs?.bibliography;
+    // First try pmDoc.attrs.bibliography
+    let bibliography = pmDoc.attrs?.bibliography;
+    
+    // If not found there, scan content for bibliography blocks
+    if (!bibliography) {
+        pmDoc.content?.forEach(node => {
+            if (node.type === 'quartoBlock' && node.attrs?.language === 'bibliography') {
+                bibliography = node.attrs.bibliography;
+            }
+        });
+    }
+    
     if (bibliography) {
         for (const [jatsId, refData] of Object.entries(bibliography)) {
             const key = jatsId.replace(/^ref-/, '').replace(/-nb-article$/, '');
             citeMap.set(jatsId, key);
+            console.log(`Citation map: ${jatsId} -> ${key}`);
         }
     }
 
@@ -24,8 +36,11 @@ function createReferenceMaps(pmDoc) {
             node.content.forEach(inline => {
                 if (inline.type === 'figureReference') {
                     const jatsId = inline.attrs.rid;
+                    // Extract the original QMD figure label from the JATS ID
+                    // "fig-plot-nb-article" -> "fig-plot"
                     const key = jatsId.replace(/-nb-article$/, '');
                     figMap.set(jatsId, key);
+                    console.log(`Figure map: ${jatsId} -> ${key}`);
                 }
             });
         }
@@ -36,20 +51,39 @@ function createReferenceMaps(pmDoc) {
 
 /**
  * Serializes an array of ProseMirror inline nodes into a Markdown string.
+ * Enhanced to handle comments and other inline marks.
  */
 function serializeInlines(inlines, { citeMap, figMap }) {
   if (!inlines) return '';
   return inlines.map(inlineNode => {
     switch (inlineNode.type) {
-      case 'text':
-        return inlineNode.text;
+      case 'text': {
+        let text = inlineNode.text;
+        
+        // Handle marks (comments, emphasis, etc.)
+        if (inlineNode.marks && inlineNode.marks.length > 0) {
+          inlineNode.marks.forEach(mark => {
+            if (mark.type === 'comment' && mark.attrs && mark.attrs.commentId) {
+              // Format as Quarto comment span
+              text = `[${text}]{.comment ref="${mark.attrs.commentId}"}`;
+            }
+            // Add other mark types as needed (bold, italic, etc.)
+            // For now, we'll keep it simple and just handle comments
+          });
+        }
+        
+        return text;
+      }
       case 'citation': {
         const rid = inlineNode.attrs.rid;
         const label = inlineNode.attrs.label;
         
+        console.log(`Serializing citation: rid="${rid}", label="${label}"`);
+        
         // Try to get the citation key from the map
         const bibKey = citeMap.get(rid);
         if (bibKey) {
+          console.log(`Using mapped citation key: ${bibKey}`);
           return `[@${bibKey}]`;
         }
         
@@ -57,9 +91,11 @@ function serializeInlines(inlines, { citeMap, figMap }) {
         if (label) {
           // If label looks like a citation key, use it
           if (/^[a-zA-Z0-9_-]+$/.test(label)) {
+            console.log(`Using label as citation key: ${label}`);
             return `[@${label}]`;
           }
           // Otherwise, use the label as is
+          console.log(`Using label as-is: ${label}`);
           return `[@${label}]`;
         }
         
@@ -67,19 +103,24 @@ function serializeInlines(inlines, { citeMap, figMap }) {
         if (rid) {
           const extractedKey = rid.replace(/^ref-/, '').replace(/-nb-article$/, '');
           if (extractedKey && extractedKey !== rid) {
+            console.log(`Last resort: extracted key from rid: ${extractedKey}`);
             return `[@${extractedKey}]`;
           }
         }
         
+        console.warn(`Could not resolve citation: rid="${rid}", label="${label}"`);
         return `[UNKNOWN_CITATION]`;
       }
       case 'figureReference': {
         const rid = inlineNode.attrs.rid;
         const label = inlineNode.attrs.label;
         
+        console.log(`Serializing figure reference: rid="${rid}", label="${label}"`);
+        
         // Try to get the figure key from the map
         const figLabel = figMap.get(rid);
         if (figLabel) {
+          console.log(`Using mapped figure label: ${figLabel}`);
           return `@{${figLabel}}`;
         }
         
@@ -87,9 +128,17 @@ function serializeInlines(inlines, { citeMap, figMap }) {
         if (label) {
           // If label looks like a figure reference, use it
           if (/^fig-/.test(label)) {
+            console.log(`Using label as figure reference: ${label}`);
             return `@{${label}}`;
           }
-          // Otherwise, use the label as is
+          // If label is "Figure 1" or similar, try to extract the key from rid
+          if (rid && rid.startsWith('fig-')) {
+            const extractedKey = rid.replace(/-nb-article$/, '');
+            console.log(`Extracted figure key from rid: ${extractedKey}`);
+            return `@{${extractedKey}}`;
+          }
+          // Otherwise, use the label as is (this might be wrong, but it's a fallback)
+          console.log(`Using label as-is: ${label}`);
           return `@{${label}}`;
         }
         
@@ -97,13 +146,16 @@ function serializeInlines(inlines, { citeMap, figMap }) {
         if (rid) {
           const extractedKey = rid.replace(/-nb-article$/, '');
           if (extractedKey && extractedKey !== rid) {
+            console.log(`Last resort: extracted key from rid: ${extractedKey}`);
             return `@{${extractedKey}}`;
           }
         }
         
+        console.warn(`Could not resolve figure reference: rid="${rid}", label="${label}"`);
         return `[UNKNOWN_FIGURE]`;
       }
       default:
+        console.warn(`Unhandled inline node type: ${inlineNode.type}`);
         return inlineNode.text || '';
     }
   }).join('');
@@ -111,6 +163,7 @@ function serializeInlines(inlines, { citeMap, figMap }) {
 
 /**
  * Serializes a single ProseMirror block node into its .qmd string representation.
+ * Enhanced to better preserve original QMD structure while incorporating text changes.
  */
 function serializeBlock(node, blockMap, refMaps) {
   switch (node.type) {
@@ -123,66 +176,96 @@ function serializeBlock(node, blockMap, refMaps) {
       return serializeInlines(node.content, refMaps);
     }
     case 'quartoBlock': {
-      const { blockKey, language, code, htmlOutput, figLabel, figCaption } = node.attrs;
+      const { blockKey, language, code, htmlOutput, figLabel, figCaption, chunkOptions } = node.attrs;
+      
+      console.log(`Serializing quartoBlock: blockKey="${blockKey}", language="${language}"`);
       
       // Handle bibliography blocks - don't render them in the output
       if (language === 'bibliography') {
+          console.log('Skipping bibliography block');
           return ''; // Do not render the bibliography block.
       }
       
       // Handle metadata blocks - use the YAML block from the original file
       if (language === 'metadata') {
+          console.log('Processing metadata block');
+          console.log('Looking for blockKey:', blockKey);
+          console.log('Available blockMap keys:', Array.from(blockMap.keys()));
           if (blockKey && blockMap.has(blockKey)) {
-            return blockMap.get(blockKey);
+            console.log(`Found metadata block in blockMap: ${blockKey}`);
+            const yamlContent = blockMap.get(blockKey);
+            console.log('YAML content from blockMap:', yamlContent.substring(0, 200) + '...');
+            return yamlContent;
           }
+          console.log(`Metadata block not found in blockMap: ${blockKey}`);
           // If no blockKey, try to reconstruct basic YAML
           const metadata = node.attrs.metadata;
           if (metadata) {
+            console.log('Reconstructing metadata from node attributes');
             let yaml = '---\n';
             if (metadata.title) yaml += `title: "${metadata.title}"\n`;
             if (metadata.authors && metadata.authors.length > 0) {
               yaml += 'author:\n';
               metadata.authors.forEach(author => {
-                if (author.name) yaml += `  - ${author.name}\n`;
-                else if (author.given && author.surname) yaml += `  - ${author.given} ${author.surname}\n`;
+                if (author.name) yaml += `  - name: ${author.name}\n`;
               });
             }
+            if (pmDoc.attrs.bibliography) yaml += `bibliography: references.bib\n`;
             yaml += '---';
             return yaml;
           }
           return '';
       }
       
-      // Handle code blocks with blockKey
+      // Handle code blocks with blockKey - preserve original structure
       if (blockKey && blockMap.has(blockKey)) {
-        return blockMap.get(blockKey);
+        console.log(`Found code block in blockMap: ${blockKey}`);
+        const codeContent = blockMap.get(blockKey);
+        console.log('Code content from blockMap:', codeContent.substring(0, 100) + '...');
+        return codeContent;
       }
       
+      console.log(`Code block not found in blockMap: ${blockKey}`);
+      console.log('Available blockMap keys:', Array.from(blockMap.keys()));
+      console.log('Code block attrs:', JSON.stringify(node.attrs, null, 2));
+      
       // Fallback: reconstruct code block from attributes if blockKey is missing
-      if (code && language) {
-        let reconstructed = `\`\`\`{${language}`;
-        if (figLabel) {
-          reconstructed += `, label="${figLabel}"`;
+      if (code && (language || chunkOptions)) {
+        console.log('Reconstructing code block from attributes');
+        let reconstructed = '```{';
+        if (chunkOptions) {
+          reconstructed += chunkOptions;
+        } else if (language) {
+          reconstructed += language;
+          if (figLabel) {
+            reconstructed += `, label="${figLabel}"`;
+          }
         }
         reconstructed += `}\n${code}\n\`\`\``;
         return reconstructed;
       }
       
-      // If we can't reconstruct anything meaningful, return an error message
-      return `[ERROR: QMD block not found for key: ${blockKey || 'undefined'}]`;
+      // If we can't reconstruct anything meaningful, log a warning but don't fail
+      console.warn(`Could not reconstruct QMD block for key: ${blockKey || 'undefined'}`);
+      return '';
     }
     default:
+      console.warn(`Unhandled block node type: ${node.type}`);
       return '';
   }
 }
 
 /**
  * Main function to serialize a ProseMirror document back to a .qmd file string.
+ * This function preserves the original QMD structure (metadata, code chunks, figures, tables)
+ * while incorporating changes made to paragraph text in ProseMirror.
+ * 
  * @param {object} pmDoc - The ProseMirror document JSON object.
  * @param {string} originalQmdString - The raw string content of the original .qmd file.
+ * @param {Array<object>} commentsArray - Optional array of comment objects to append.
  * @returns {string} The full content of the newly constructed .qmd file.
  */
-function proseMirrorJSON_to_qmd(pmDoc, originalQmdString) {
+function proseMirrorJSON_to_qmd(pmDoc, originalQmdString, commentsArray = []) {
   if (!pmDoc || pmDoc.type !== 'doc') {
     throw new Error('Invalid ProseMirror document provided.');
   }
@@ -192,28 +275,45 @@ function proseMirrorJSON_to_qmd(pmDoc, originalQmdString) {
   console.log('- Document attrs:', JSON.stringify(pmDoc.attrs, null, 2));
   console.log('- Content nodes count:', pmDoc.content?.length || 0);
   
-  // Debug: Log blockMap contents
+  // Parse the original QMD to get block mappings
   const { blockMap } = parseQmd(originalQmdString);
   console.log('- BlockMap keys:', Array.from(blockMap.keys()));
+  console.log('- BlockMap contents:');
+  blockMap.forEach((value, key) => {
+    console.log(`  ${key}:`, value.substring(0, 100) + '...');
+  });
 
-  // 2. Create maps for resolving cross-references.
+  // Create maps for resolving cross-references
   const refMaps = createReferenceMaps(pmDoc);
   console.log('- Citation map size:', refMaps.citeMap.size);
   console.log('- Figure map size:', refMaps.figMap.size);
+  console.log('- Citation map contents:', Object.fromEntries(refMaps.citeMap));
+  console.log('- Figure map contents:', Object.fromEntries(refMaps.figMap));
 
-  // 3. Serialize each block node from the ProseMirror document.
+  // Serialize each block node from the ProseMirror document
   const contentParts = pmDoc.content
     .map((node, index) => {
-      console.log(`- Processing node ${index}:`, node.type, node.attrs);
-      return serializeBlock(node, blockMap, refMaps);
+      console.log(`\n- Processing node ${index}:`, node.type);
+      console.log('  Node attrs:', JSON.stringify(node.attrs, null, 2));
+      const result = serializeBlock(node, blockMap, refMaps);
+      console.log('  Serialized result:', result ? result.substring(0, 100) + '...' : 'EMPTY');
+      return result;
     })
     .filter(part => part !== null && part !== ''); // Filter out empty strings
 
-  // 4. Join the parts to form the final document.
-  const result = contentParts.join('\n\n');
+  // Join the parts to form the final document
+  let result = contentParts.join('\n\n');
   console.log('- Final serialized content length:', result.length);
+  console.log('- Final content preview:', result.substring(0, 500) + '...');
   
-  return result;
+  // Add comments appendix if provided
+  if (commentsArray && commentsArray.length > 0) {
+    const commentsJsonPayload = JSON.stringify({ comments: commentsArray }, null, 2);
+    const appendix = `\n<!-- Comments Appendix -->\n<div id="quartorium-comments" style="display:none;">\n\`\`\`json\n${commentsJsonPayload}\n\`\`\`\n</div>\n`;
+    result += appendix;
+  }
+  
+  return result.trim() + '\n'; // Ensure a final newline
 }
 
 module.exports = { proseMirrorJSON_to_qmd };

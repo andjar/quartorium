@@ -125,6 +125,7 @@ const cleanText = (text) => text?.replace(/\s+/g, ' ').trim() || '';
 
 /**
  * First pass: Scans the JATS document to build maps of all referenceable items.
+ * Enhanced to better handle Quarto's JATS output format.
  * @param {Document} document - The JSDOM document object.
  * @returns {object} A context object with maps for affiliations, refs, etc.
  */
@@ -136,27 +137,66 @@ function buildContext(document) {
         figures: {}
     };
 
+    console.log('Building context from JATS document...');
+
     // Use querySelectorAll to find all elements with an ID attribute. This is much cleaner.
-    document.querySelectorAll('[id]').forEach(el => {
+    const elementsWithId = document.querySelectorAll('[id]');
+    console.log(`Found ${elementsWithId.length} elements with IDs`);
+
+    elementsWithId.forEach(el => {
         const id = el.id;
-        switch (el.tagName.toLowerCase()) {
+        const tagName = el.tagName.toLowerCase();
+        
+        console.log(`Processing element: ${tagName} with id: ${id}`);
+        
+        switch (tagName) {
             case 'aff':
                 const inst = el.querySelector('institution');
                 context.affiliations[id] = cleanText(inst?.textContent) || cleanText(el.textContent);
+                console.log(`Added affiliation: ${id} -> ${context.affiliations[id]}`);
                 break;
             case 'corresp':
                 context.notes[id] = cleanText(el.textContent) || 'Corresponding Author';
+                console.log(`Added correspondence note: ${id} -> ${context.notes[id]}`);
                 break;
             case 'ref':
                 context.references[id] = parseReference(el);
+                console.log(`Added reference: ${id} -> ${JSON.stringify(context.references[id])}`);
                 break;
             case 'fig':
                 const caption = el.querySelector('caption');
-                context.figures[id] = { id, caption: cleanText(caption?.textContent) };
+                context.figures[id] = { 
+                    id, 
+                    caption: cleanText(caption?.textContent),
+                    element: el // Store the element for later processing
+                };
+                console.log(`Added figure: ${id} -> ${context.figures[id].caption}`);
+                break;
+            default:
+                console.log(`Unhandled element type: ${tagName} with id: ${id}`);
                 break;
         }
     });
 
+    // Also look for references in the back matter
+    const backMatter = document.querySelector('back');
+    if (backMatter) {
+        console.log('Found back matter, scanning for references...');
+        const refList = backMatter.querySelector('ref-list');
+        if (refList) {
+            const refs = refList.querySelectorAll('ref');
+            console.log(`Found ${refs.length} references in back matter`);
+            refs.forEach(ref => {
+                const id = ref.id;
+                if (id && !context.references[id]) {
+                    context.references[id] = parseReference(ref);
+                    console.log(`Added back matter reference: ${id} -> ${JSON.stringify(context.references[id])}`);
+                }
+            });
+        }
+    }
+
+    console.log(`Context built: ${Object.keys(context.affiliations).length} affiliations, ${Object.keys(context.references).length} references, ${Object.keys(context.figures).length} figures`);
     return context;
 }
 
@@ -320,6 +360,7 @@ function processFig(figEl, repoId, codeContent, language, commitHash, docFilepat
 /**
  * MODIFIED: Transforms JATS body nodes.
  * It now accepts blockMap to add a 'blockKey'.
+ * Enhanced to handle more JATS formats from Quarto.
  */
 function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFilepath) {
     const pmNodes = [];
@@ -347,12 +388,16 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                     const refType = el.getAttribute('ref-type');
                     const rid = el.getAttribute('rid');
                     
+                    console.log(`Processing xref: ref-type="${refType}", rid="${rid}"`);
+                    
                     if (refType === 'bibr' && context.references[rid]) {
+                        console.log(`Found bibliography reference: ${rid}`);
                         pmNodes.push({
                             type: 'citation',
                             attrs: { rid: rid, label: cleanText(el.textContent) },
                         });
-                    } else if (context.figures[rid]) {
+                    } else if (refType === 'fig' && context.figures[rid]) {
+                        console.log(`Found figure reference: ${rid}`);
                         pmNodes.push({
                             type: 'figureReference',
                             attrs: {
@@ -361,16 +406,51 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                             }
                         });
                     } else {
-                        // Fallback for other unhandled xrefs
-                        pmNodes.push({ type: 'text', text: cleanText(el.textContent) });
+                        // Try to handle other reference types
+                        console.log(`Unhandled xref type: ${refType}, rid: ${rid}`);
+                        if (rid && (rid.startsWith('ref-') || rid.startsWith('fig-'))) {
+                            // Try to extract the key from the rid
+                            const key = rid.replace(/^ref-/, '').replace(/^fig-/, '').replace(/-nb-article$/, '');
+                            if (rid.startsWith('ref-')) {
+                                pmNodes.push({
+                                    type: 'citation',
+                                    attrs: { rid: rid, label: key },
+                                });
+                            } else if (rid.startsWith('fig-')) {
+                                // For figure references, try to get the proper label
+                                let label = cleanText(el.textContent);
+                                // If the text content is empty or generic, try the alt attribute
+                                if (!label || label === 'plot' || label === 'fig') {
+                                    const alt = el.getAttribute('alt');
+                                    if (alt) {
+                                        label = alt;
+                                    } else {
+                                        // Fallback to the extracted key
+                                        label = key;
+                                    }
+                                }
+                                console.log(`Figure reference label resolved to: ${label}`);
+                                pmNodes.push({
+                                    type: 'figureReference',
+                                    attrs: { rid: rid, label: label },
+                                });
+                            }
+                        } else {
+                            // Fallback for other unhandled xrefs
+                            pmNodes.push({ type: 'text', text: cleanText(el.textContent) });
+                        }
                     }
                     break;
                 case 'sec':
                     if (el.getAttribute('specific-use') === 'notebook-content') {
+                        console.log('Found notebook-content section');
                         const codeEl = el.querySelector('code');
                         const figEl = el.querySelector('fig');
                         const code = codeEl ? codeEl.textContent : '';
                         const language = codeEl ? codeEl.getAttribute('language') : null;
+                        
+                        console.log(`Code element: ${codeEl ? 'found' : 'not found'}, language: ${language}`);
+                        console.log(`Figure element: ${figEl ? 'found' : 'not found'}`);
                         
                         if (figEl) {
                             // 1. Get the perfectly constructed block from your original function
@@ -378,8 +458,24 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                             
                             // 2. ENHANCE it with the blockKey
                             const blockKey = figEl.id; // The JATS fig id matches the QMD label
+                            console.log(`Looking for blockKey: ${blockKey} in blockMap`);
                             if (blockMap.has(blockKey)) {
                                 pmBlock.attrs.blockKey = blockKey;
+                                console.log(`Added blockKey: ${blockKey}`);
+                            } else {
+                                console.log(`BlockKey not found: ${blockKey}`);
+                                // Try to extract the key from the ID
+                                const extractedKey = blockKey.replace(/-nb-article$/, '');
+                                if (blockMap.has(extractedKey)) {
+                                    pmBlock.attrs.blockKey = extractedKey;
+                                    console.log(`Added extracted blockKey: ${extractedKey}`);
+                                } else {
+                                    // If still not found, try the original fig-plot key
+                                    if (blockMap.has('fig-plot')) {
+                                        pmBlock.attrs.blockKey = 'fig-plot';
+                                        console.log(`Added fallback blockKey: fig-plot`);
+                                    }
+                                }
                             }
                             pmNodes.push(pmBlock);
 
@@ -406,13 +502,46 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                     }
                     break;
                 case 'fig':
+                    console.log('Found standalone figure element');
                     // This handles figures outside of notebook cells
                     const pmBlock = processFig(el, repoId, '', null, commitHash, docFilepath);
                     const blockKey = el.id;
+                    console.log(`Looking for standalone figure blockKey: ${blockKey} in blockMap`);
                     if (blockMap.has(blockKey)) {
                         pmBlock.attrs.blockKey = blockKey;
+                        console.log(`Added standalone figure blockKey: ${blockKey}`);
+                    } else {
+                        console.log(`Standalone figure blockKey not found: ${blockKey}`);
+                        // Try to extract the key from the ID
+                        const extractedKey = blockKey.replace(/-nb-article$/, '');
+                        if (blockMap.has(extractedKey)) {
+                            pmBlock.attrs.blockKey = extractedKey;
+                            console.log(`Added extracted standalone figure blockKey: ${extractedKey}`);
+                        }
                     }
                     pmNodes.push(pmBlock);
+                    break;
+                case 'code':
+                    // Handle standalone code blocks
+                    console.log('Found standalone code element');
+                    const codeLanguage = el.getAttribute('language') || 'text';
+                    const codeContent = el.textContent;
+                    pmNodes.push({
+                        type: 'quartoBlock',
+                        attrs: {
+                            code: codeContent,
+                            language: codeLanguage,
+                            htmlOutput: '',
+                            figId: '',
+                            figCaption: '',
+                            figLabel: '',
+                            metadata: null
+                        }
+                    });
+                    break;
+                default:
+                    // Recursively process other elements
+                    pmNodes.push(...transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath));
                     break;
             }
         }
@@ -424,14 +553,20 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
 /**
  * MODIFIED: The main transformation function.
  * It now accepts blockMap as a new parameter.
+ * Enhanced to handle Quarto's JATS structure with sub-articles.
  */
 async function jatsToProseMirrorJSON(jatsXml, blockMap, repoId, commitHash, docFilepath) {
     try {
         const dom = new JSDOM(jatsXml, { contentType: "application/xml" });
         const { document } = dom.window;
         const context = buildContext(document);
+        
+        // Look for sub-article first (this contains the notebook content)
         const subArticle = document.querySelector('sub-article');
         const articleToParse = subArticle || document.querySelector('article');
+        
+        console.log(`Parsing ${subArticle ? 'sub-article' : 'main article'}`);
+        
         const frontEl = articleToParse.querySelector('front, front-stub');
         const metadata = frontEl ? parseFront(frontEl, context) : {};
         

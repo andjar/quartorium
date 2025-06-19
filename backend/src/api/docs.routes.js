@@ -304,7 +304,15 @@ function diffRouteLogic(db, git, fs, projectBaseDir) { // fs here is for readFil
       });
 
       const projectDir = actualPath.join(projectBaseDir, linkInfo.full_name);
-      const mainBranch = 'main'; // Default to 'main' since main_branch column doesn't exist
+      
+      // Get the main branch from the repository
+      const repo = await new Promise((resolve, reject) => {
+        actualDb.get('SELECT main_branch FROM repositories WHERE full_name = ?', [linkInfo.full_name], (err, row) => {
+          if (err) return reject(new Error(`Database error fetching repository: ${err.message}`));
+          resolve(row);
+        });
+      });
+      const mainBranch = repo.main_branch || 'main'; // Use the repository's main branch
 
       console.log(`[Diff] Project directory: ${projectDir}`);
       console.log(`[Diff] Main branch: ${mainBranch}`);
@@ -422,7 +430,7 @@ router.post('/merge/:shareToken', async (req, res) => {
     });
 
     const projectDir = actualPath.join(REPOS_DIR_path, linkInfo.full_name);
-    const mainBranch = 'main';
+    const mainBranch = repo.main_branch || 'main'; // Use the repository's main branch
 
     // 3. Checkout main branch
     await actualGit.checkout({ fs: actualFsForGit, dir: projectDir, ref: mainBranch });

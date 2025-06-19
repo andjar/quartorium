@@ -42,6 +42,7 @@ const createReposTable = () => {
       name TEXT NOT NULL,
       full_name TEXT NOT NULL,
       is_private BOOLEAN NOT NULL,
+      main_branch TEXT DEFAULT 'main',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users (id)
     )
@@ -162,5 +163,30 @@ const createLiveDocumentsTable = () => {
 };
 
 createLiveDocumentsTable();
+
+// Migration function to add main_branch column to existing repositories
+const migrateReposTable = () => {
+  // Check if main_branch column exists
+  db.all("PRAGMA table_info(repositories)", (err, rows) => {
+    if (err) {
+      console.error('Error checking repositories table schema:', err.message);
+      return;
+    }
+    
+    const hasMainBranch = rows.some(row => row.name === 'main_branch');
+    if (!hasMainBranch) {
+      // Add main_branch column with default value
+      db.run("ALTER TABLE repositories ADD COLUMN main_branch TEXT DEFAULT 'main'", (alterErr) => {
+        if (alterErr) {
+          console.error('Error adding main_branch column:', alterErr.message);
+        } else {
+          console.log('✅ Added main_branch column to repositories table.');
+        }
+      });
+    }
+  });
+};
+
+migrateReposTable();
 
 module.exports = db;
