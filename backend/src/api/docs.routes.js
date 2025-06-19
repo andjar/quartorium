@@ -4,6 +4,7 @@ const path = require('path');
 const git = require('isomorphic-git');
 const http = require('isomorphic-git/http/node');
 const fs = require('fs/promises');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser');
 const Diff = require('diff');
@@ -11,6 +12,7 @@ const { ensureAuthenticated } = require('../core/auth');
 
 const router = express.Router();
 const REPOS_DIR = path.join(__dirname, '../../repos');
+const CACHE_DIR = path.join(__dirname, '../../cache/rendered_docs');
 
 const isAuthenticated = (req, res, next) => {
   if (req.isAuthenticated()) return next();
@@ -25,6 +27,14 @@ router.get('/view', async (req, res) => {
   const { repoId: queryRepoId, filepath: queryFilepath, shareToken } = req.query;
 
   try {
+    // Ensure cache directory exists
+    try {
+      await fs.mkdir(CACHE_DIR, { recursive: true });
+    } catch (cacheError) {
+      console.warn(`Failed to create cache directory ${CACHE_DIR}:`, cacheError);
+      // If directory creation fails, we can still proceed without caching
+    }
+
     let effectiveRepoId;
     let effectiveFilepath;
     let projectDir;
@@ -80,6 +90,38 @@ router.get('/view', async (req, res) => {
       // File will be read from the currently checked-out branch or default for this repo
     }
 
+    let currentCommitHash;
+    let filepathHash;
+    let cacheFilename;
+
+    try {
+      currentCommitHash = await git.resolveRef({ fs, dir: projectDir, ref: 'HEAD' });
+      filepathHash = crypto.createHash('md5').update(effectiveFilepath).digest('hex');
+      cacheFilename = path.join(CACHE_DIR, `${effectiveRepoId}-${filepathHash}-${currentCommitHash}.json`);
+
+      // --- START CACHE READ LOGIC ---
+      try {
+        await fs.access(cacheFilename); // Check if file exists and is accessible
+        const cachedContent = await fs.readFile(cacheFilename, 'utf8');
+        const proseMirrorJson = JSON.parse(cachedContent);
+        console.log(`[Cache HIT] Serving ${effectiveFilepath} for repo ${effectiveRepoId} (commit ${currentCommitHash.substring(0,7)}) from cache.`);
+        return res.json(proseMirrorJson);
+      } catch (cacheReadError) {
+        if (cacheReadError.code !== 'ENOENT') { // ENOENT is expected for a cache miss
+          console.warn(`[Cache Read WARN] Error reading cache file ${cacheFilename}:`, cacheReadError);
+        } else {
+          console.log(`[Cache MISS] No cache for ${effectiveFilepath} for repo ${effectiveRepoId} at commit ${currentCommitHash.substring(0,7)}.`);
+        }
+        // Proceed to rendering if cache miss or error reading cache
+      }
+      // --- END CACHE READ LOGIC ---
+    } catch (cacheSetupError) {
+      // Errors in getting commit hash or constructing cache path, etc.
+      // These variables might be undefined if this block fails, so cache write should also handle this.
+      console.warn(`[Cache WARN] Error in cache setup (commit hash, filename construction):`, cacheSetupError);
+      // Proceed to rendering, caching will likely be skipped.
+    }
+
     const fullFilepath = path.join(projectDir, effectiveFilepath);
 
     // Check if file exists before trying to render
@@ -94,6 +136,21 @@ router.get('/view', async (req, res) => {
     
     // Transform the JATS to ProseMirror JSON
     const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, effectiveRepoId);
+
+    // --- START CACHE WRITE LOGIC ---
+    if (currentCommitHash && cacheFilename) { // Only attempt to write if cache setup was successful
+      try {
+        // Ensure CACHE_DIR exists (it might have failed silently before, or this is a good redundant check)
+        // await fs.mkdir(CACHE_DIR, { recursive: true }); // Already done at the beginning of the route handler
+        await fs.writeFile(cacheFilename, JSON.stringify(proseMirrorJson));
+        console.log(`[Cache WRITE] Cached ${effectiveFilepath} for repo ${effectiveRepoId} (commit ${currentCommitHash.substring(0,7)}) to ${cacheFilename}`);
+      } catch (cacheWriteError) {
+        console.warn(`[Cache Write WARN] Failed to write cache file ${cacheFilename}:`, cacheWriteError);
+      }
+    } else {
+      console.log(`[Cache Write SKIP] Skipped writing cache due to missing commit hash or cache filename (setup error).`);
+    }
+    // --- END CACHE WRITE LOGIC ---
     
     res.json(proseMirrorJson);
 
