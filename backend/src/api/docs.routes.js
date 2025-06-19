@@ -104,9 +104,12 @@ router.get('/view', async (req, res) => {
       try {
         await fs.access(cacheFilename); // Check if file exists and is accessible
         const cachedContent = await fs.readFile(cacheFilename, 'utf8');
-        const proseMirrorJson = JSON.parse(cachedContent);
+        const proseMirrorJson = JSON.parse(cachedContent); // This likely already contains the structure we want
         console.log(`[Cache HIT] Serving ${effectiveFilepath} for repo ${effectiveRepoId} (commit ${currentCommitHash.substring(0,7)}) from cache.`);
-        return res.json(proseMirrorJson);
+        // Ensure the cached object also includes currentCommitHash. If it's an old cache, it might not.
+        // For simplicity, we assume if it's cached, it was cached with currentCommitHash.
+        // A more robust solution would be to check and re-add if missing, or re-cache.
+        return res.json({ prosemirrorJson: proseMirrorJson, currentCommitHash });
       } catch (cacheReadError) {
         if (cacheReadError.code !== 'ENOENT') { // ENOENT is expected for a cache miss
           console.warn(`[Cache Read WARN] Error reading cache file ${cacheFilename}:`, cacheReadError);
@@ -157,7 +160,7 @@ router.get('/view', async (req, res) => {
     }
     // --- END CACHE WRITE LOGIC ---
     
-    res.json(proseMirrorJson);
+    res.json({ prosemirrorJson: proseMirrorJson, currentCommitHash });
 
   } catch (error) {
     console.error('Error getting document view:', error.message);
