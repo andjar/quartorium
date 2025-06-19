@@ -34,7 +34,7 @@ function ReviewPage() {
   if (error) return <div style={{ color: 'red' }}>{error}</div>;
 
   return (
-    <div style={{ padding: '1rem' }}>
+    <div style={{ padding: '1rem', textAlign: 'left' }}>
       <button onClick={() => navigate('/dashboard')}>← Back to Dashboard</button>
       <h2>Reviewing Changes from: {diffData?.branchName}</h2>
       <p>Review the changes below. When you are ready, you can merge them into your main branch.</p>
