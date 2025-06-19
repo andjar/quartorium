@@ -18,15 +18,39 @@ function DashboardPage() {
   const [sharingFile, setSharingFile] = useState(null);
 
   const openShareModal = async (repoId, filepath) => {
-      // Call our new endpoint to get the document ID
+    try {
       const res = await fetch('/api/docs/get-or-create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ repoId, filepath }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ repoId, filepath }),
       });
+
+      if (!res.ok) {
+        let errorMsg = 'Failed to get document information.';
+        try {
+          const errorData = await res.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch (e) {
+          // If parsing error JSON fails, use the default message
+          console.error("Could not parse error response from /api/docs/get-or-create:", e);
+        }
+        console.error("Error response from /api/docs/get-or-create:", res.status, errorMsg);
+        alert(`Error preparing share modal: ${errorMsg}`);
+        return;
+      }
+
       const doc = await res.json();
+      if (!doc || doc.id === undefined) {
+          console.error("Invalid document data received from /api/docs/get-or-create:", doc);
+          alert("Error preparing share modal: Could not retrieve valid document information.");
+          return;
+      }
       setSharingFile({ docId: doc.id, filepath, repoId });
+    } catch (error) {
+      console.error("Network or other error in openShareModal:", error);
+      alert(`Error preparing share modal: ${error.message || "An unexpected error occurred."}`);
+    }
   };
 
   const fetchRepos = useCallback(() => {

@@ -278,8 +278,14 @@ router.post('/:shareToken', async (req, res) => {
 router.post('/get-or-create', async (req, res) => {
   const { repoId, filepath } = req.body;
   try {
-    let doc = await new Promise((resolve) => {
-        db.get('SELECT * FROM documents WHERE repo_id = ? AND filepath = ?', [repoId, filepath], (err, row) => resolve(row));
+    let doc = await new Promise((resolve, reject) => { // Added reject
+        db.get('SELECT * FROM documents WHERE repo_id = ? AND filepath = ?', [repoId, filepath], (err, row) => {
+            if (err) {
+                console.error("DB error in get-or-create/db.get during SELECT:", err); // Added more specific logging
+                return reject(err); // Reject the promise on error
+            }
+            resolve(row);
+        });
     });
     if (!doc) {
         const result = await new Promise((resolve, reject) => {
