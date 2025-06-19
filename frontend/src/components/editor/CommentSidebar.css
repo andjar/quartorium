@@ -11,14 +11,17 @@
   border-left: 1px solid #ccc;
   background-color: #f9f9f9;
   overflow-y: auto;
-  height: calc(100vh - 30px); /* Adjust to account for fixed header height */
+  height: calc(100vh - 60px); /* Increased margin to ensure proper scrolling */
   margin-top: 30px; /* Add top margin to push below fixed header */
   transition: width 0.3s ease;
+  position: relative;
+  box-sizing: border-box;
 }
 
 .comment-sidebar.collapsed {
-  width: 35px;
+  width: 50px;
   padding: 15px 10px;
+  overflow: hidden; /* Hide overflow when collapsed */
 }
 
 .comment-sidebar-header {
@@ -69,6 +72,8 @@
   margin-bottom: 10px;
   cursor: pointer;
   transition: border-color 0.2s ease-in-out;
+  max-height: 400px; /* Prevent comments from becoming too large */
+  overflow-y: auto; /* Allow scrolling within individual comments if needed */
 }
 
 .comment-item.active {
@@ -85,15 +90,11 @@
   background-color: #f0f0f0; /* Slightly dimmer for resolved comments */
 }
 
-.comment-status-resolved .comment-header strong {
-   text-decoration: line-through;
-}
-
-
 .comment-header {
   margin-bottom: 8px;
   padding-bottom: 5px;
   border-bottom: 1px solid #eee;
+  text-align: left;
 }
 
 .comment-header span {
@@ -101,22 +102,26 @@
   font-size: 0.9em;
   color: #555;
   margin-bottom: 3px;
+  text-align: left;
 }
+
 .comment-header span strong {
   color: #333;
 }
-
 
 .comment-header small {
   font-size: 0.8em;
   color: #777;
   display: block;
+  text-align: left;
 }
 
 .comment-thread {
   margin-top: 8px;
   padding-left: 10px;
   border-left: 2px solid #eee;
+  max-height: 300px; /* Limit thread height */
+  overflow-y: auto; /* Allow scrolling within thread */
 }
 
 .comment-message {
@@ -125,6 +130,7 @@
   border-radius: 3px;
   margin-bottom: 5px;
   border: 1px solid #eaeaea;
+  text-align: left;
 }
 
 .comment-message p {
@@ -132,11 +138,14 @@
   font-size: 0.95em;
   color: #333;
   word-wrap: break-word;
+  text-align: left;
 }
 
 .comment-message small {
   font-size: 0.75em;
   color: #888;
+  text-align: left;
+  display: block;
 }
 
 .comment-actions {
@@ -166,7 +175,6 @@
   background-color: #545b62;
 }
 
-
 .reply-input-area {
   margin-top: 10px;
   padding-top: 10px;
@@ -182,6 +190,7 @@
   margin-bottom: 5px;
   font-size: 0.9em;
   resize: vertical;
+  text-align: left;
 }
 
 .reply-input-area button {

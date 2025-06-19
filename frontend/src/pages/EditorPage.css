@@ -25,6 +25,18 @@
     width: 100%; /* Full width */
   }
   
+  /* Style for the greeting message in the header */
+  .editor-header p {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: #2c5aa0;
+    background-color: #e8f4fd;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    border: 1px solid #b3d9ff;
+  }
+  
   /* The main content area that holds the editor */
   .editor-content-area {
     /* This creates our main column and the side margins */

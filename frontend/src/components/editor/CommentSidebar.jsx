@@ -104,7 +104,6 @@ function CommentSidebar({ comments, setComments, activeCommentId, onCommentSelec
             >
               <div className="comment-header">
                 <span><strong>Author:</strong> {comment.author === currentUser.id ? currentUser.name : comment.author}</span>
-                <span><strong>Status:</strong> {comment.status}</span>
                 <small>Timestamp: {new Date(comment.timestamp).toLocaleString()}</small>
               </div>
               <div className="comment-thread">

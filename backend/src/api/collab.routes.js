@@ -18,7 +18,22 @@ router.get('/:shareToken', async (req, res) => {
   const { shareToken } = req.params;
 
   try {
-    // 1. First, check if there are any unsaved changes in live_documents
+    // 1. First, get the share link information (needed for both live doc and branch rendering)
+    const linkInfo = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT s.*, d.filepath, r.id as repoId, r.full_name, s.collaborator_label 
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.share_token = ?
+      `;
+      db.get(sql, [shareToken], (err, row) => {
+        if (err || !row) return reject(new Error('Invalid share link.'));
+        resolve(row);
+      });
+    });
+
+    // 2. Check if there are any unsaved changes in live_documents
     const liveDoc = await new Promise((resolve, reject) => {
       // Updated SELECT query to include comments_json
       db.get('SELECT prosemirror_json, base_commit_hash, comments_json FROM live_documents WHERE share_token = ?', [shareToken], (err, row) => {
@@ -31,7 +46,7 @@ router.get('/:shareToken', async (req, res) => {
       });
     });
 
-    // 2. If we have unsaved changes, return them
+    // 3. If we have unsaved changes, return them
     if (liveDoc) {
       console.log(`Returning unsaved changes for shareToken ${shareToken}`);
       let prosemirrorJson;
@@ -51,29 +66,15 @@ router.get('/:shareToken', async (req, res) => {
         return res.json({ 
           prosemirrorJson: prosemirrorJson, 
           comments: comments, // Include comments in the response
-          currentCommitHash: liveDoc.base_commit_hash 
+          currentCommitHash: liveDoc.base_commit_hash,
+          collaboratorLabel: linkInfo.collaborator_label || null // Include collaborator label
         });
       }
     }
 
-    // 3. If no unsaved changes (or live doc parsing failed), render from the collaboration branch
+    // 4. If no unsaved changes (or live doc parsing failed), render from the collaboration branch
     console.log(`No valid unsaved changes found for shareToken ${shareToken}, rendering from branch`);
     
-    // Find the share link and associated document/repo info
-    const linkInfo = await new Promise((resolve, reject) => {
-      const sql = `
-        SELECT s.*, d.filepath, r.id as repoId, r.full_name 
-        FROM share_links s 
-        JOIN documents d ON s.doc_id = d.id 
-        JOIN repositories r ON d.repo_id = r.id 
-        WHERE s.share_token = ?
-      `;
-      db.get(sql, [shareToken], (err, row) => {
-        if (err || !row) return reject(new Error('Invalid share link.'));
-        resolve(row);
-      });
-    });
-
     // Check out the specific collaboration branch
     const projectDir = path.join(REPOS_DIR, linkInfo.full_name);
     await git.checkout({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
@@ -100,7 +101,12 @@ router.get('/:shareToken', async (req, res) => {
     // using the logic from `extractCommentsAppendix` if we were to use the remark path here.
     // Since we are using JATS path here, we'll return empty comments.
     // Or, if the /api/docs/view endpoint is the primary one for viewing, it would handle this.
-    res.json({ prosemirrorJson: proseMirrorJson, comments: [], currentCommitHash: commitHash });
+    res.json({ 
+      prosemirrorJson: proseMirrorJson, 
+      comments: [], 
+      currentCommitHash: commitHash,
+      collaboratorLabel: linkInfo.collaborator_label || null // Include collaborator label
+    });
 
   } catch (error) {
     console.error('Error loading collab doc:', error);
@@ -211,6 +217,7 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
         SELECT
           s.collab_branch_name,
           s.user_id,
+          s.collaborator_label,
           d.filepath,
           r.full_name,
           u.username
@@ -237,7 +244,8 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
     const projectDir = path.join(REPOS_DIR, linkAndUserInfo.full_name);
     const collabBranchName = linkAndUserInfo.collab_branch_name;
     const collabFilepath = linkAndUserInfo.filepath;
-    const authorName = linkAndUserInfo.username;
+    // Use collaborator_label as author name if available, otherwise fall back to username
+    const authorName = linkAndUserInfo.collaborator_label || linkAndUserInfo.username;
     // Assuming email is not stored, create a placeholder.
     // If github_id is available on users table and preferred, it could be used.
     // For now, username@domain or user_id@domain.

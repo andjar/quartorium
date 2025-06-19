@@ -19,6 +19,7 @@ function CollabEditorPage() {
   const [baseCommitHash, setBaseCommitHash] = useState(null);
   const [comments, setComments] = useState([]); // Existing state for comments
   const [activeCommentId, setActiveCommentId] = useState(null);
+  const [collaboratorLabel, setCollaboratorLabel] = useState(null); // New state for collaborator label
   const commentsRef = useRef(comments); // Ref to store current comments
 
   // Update ref whenever comments change
@@ -27,7 +28,10 @@ function CollabEditorPage() {
   }, [comments]);
 
   // Placeholder for current user - replace with actual user context/auth later
-  const currentUser = { id: `user-${Math.random().toString(36).substr(2, 9)}`, name: 'Current User' };
+  const currentUser = { 
+    id: `user-${Math.random().toString(36).substr(2, 9)}`, 
+    name: collaboratorLabel || 'Current User' 
+  };
 
 
   const handleCollabCommit = async () => {
@@ -221,6 +225,10 @@ function CollabEditorPage() {
           console.log('Setting editor content:', contentToLoad);
           editor.commands.setContent(contentToLoad);
           setBaseCommitHash(data.currentCommitHash);
+          // Set collaborator label if provided by the backend
+          if (data.collaboratorLabel) {
+            setCollaboratorLabel(data.collaboratorLabel);
+          }
           // Load comments if provided by the backend
           if (data.comments) {
             setComments(Array.isArray(data.comments) ? data.comments : []);
@@ -284,6 +292,7 @@ function CollabEditorPage() {
     <div className="editor-page-container">
       <header className="editor-header">
         <h3>Quartorium Collaborative Editor</h3>
+        {collaboratorLabel && <p>Hello, {collaboratorLabel}!</p>}
         <div>
           <span>Status: {status} (Commit: {baseCommitHash ? baseCommitHash.substring(0, 7) : 'N/A'})</span>
           <button onClick={addComment} style={{ margin: '1rem' }}>Add Comment</button>
