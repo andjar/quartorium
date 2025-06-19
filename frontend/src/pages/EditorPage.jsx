@@ -3,20 +3,23 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import debounce from 'lodash.debounce';
-
+import CommentMark from '../components/editor/CommentMark';
+import CommentSidebar from '../components/editor/CommentSidebar';
 import QuartoBlock from '../components/editor/QuartoBlock';
-// import { dummyProseMirrorDoc } from '../dummy-data/dummyDoc'; // Will be replaced by fetched content
 import './EditorPage.css';
 
 function EditorPage() {
   const navigate = useNavigate();
-  const { repoId, '*': filepath } = useParams(); // Get repoId and filepath from URL
+  const { repoId, '*': filepath } = useParams(); // From main
 
+  // Combined state from both branches
   const [status, setStatus] = useState('Loading...');
   const [baseCommitHash, setBaseCommitHash] = useState(null);
-  const [editorContent, setEditorContent] = useState(null); // To store fetched content
+  const [editorContent, setEditorContent] = useState(null);
+  const [comments, setComments] = useState([]);
+  const [activeCommentId, setActiveCommentId] = useState(null);
 
-  // Debounced save function for Prosemirror JSON
+  // Debounced save function from main
   const saveJsonDocument = useCallback(
     debounce(async (currentJsonContent) => {
       if (!baseCommitHash) {
@@ -29,13 +32,14 @@ function EditorPage() {
         return;
       }
 
+      // TODO: When backend supports it, send comments along with the document.
       setStatus('Saving JSON...');
       try {
         const response = await fetch('/api/docs/save-json', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            repo_id: parseInt(repoId), // Ensure repoId is an integer
+            repo_id: parseInt(repoId),
             filepath: filepath,
             prosemirror_json: JSON.stringify(currentJsonContent),
             base_commit_hash: baseCommitHash,
@@ -46,19 +50,25 @@ function EditorPage() {
           throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
         }
         setStatus('JSON Saved');
-        // Optionally, update baseCommitHash if the backend returns a new one after this save,
-        // but typically this specific endpoint might not return a new commit hash.
       } catch (error) {
         console.error('Failed to save JSON document:', error);
         setStatus(`JSON Save Failed: ${error.message}`);
       }
-    }, 2000), // Debounce time: 2 seconds
-    [repoId, filepath, baseCommitHash] // Dependencies for useCallback
+    }, 2000),
+    [repoId, filepath, baseCommitHash]
   );
 
   const editor = useEditor({
-    extensions: [StarterKit, QuartoBlock],
-    content: editorContent, // Initial content will be null, then updated by fetch
+    extensions: [
+      StarterKit,
+      QuartoBlock,
+      // Add CommentMark extension from feature/commenting
+      CommentMark.configure({
+        HTMLAttributes: { class: 'comment-mark' },
+        onCommentClick: (commentId) => setActiveCommentId(commentId),
+      }),
+    ],
+    content: editorContent, // Use editorContent state from main
     editable: true,
     onUpdate: ({ editor: currentEditor }) => {
       setStatus('Unsaved JSON changes');
@@ -66,11 +76,10 @@ function EditorPage() {
     },
   }, [editorContent]); // Re-initialize editor when editorContent changes
 
-  // Fetch document content on component mount
+  // Fetch document content from API (logic from main)
   useEffect(() => {
     if (!repoId || !filepath) {
       setStatus('Error: Missing repository ID or filepath in URL.');
-      console.error("Missing repoId or filepath for fetching document.");
       return;
     }
     setStatus('Loading document...');
@@ -83,8 +92,6 @@ function EditorPage() {
       })
       .then(data => {
         if (data.prosemirrorJson && data.currentCommitHash) {
-          // The backend returns prosemirrorJson which is already an object.
-          // It might be a string if it was stringified twice, ensure it's an object for the editor.
           let contentToLoad = data.prosemirrorJson;
           if (typeof data.prosemirrorJson === 'string') {
             try {
@@ -94,34 +101,31 @@ function EditorPage() {
               throw new Error("Invalid JSON format received from backend.");
             }
           }
-
           setEditorContent(contentToLoad);
           setBaseCommitHash(data.currentCommitHash);
           setStatus('Loaded');
+          // TODO: When backend supports it, load comments here.
+          // if (data.comments) setComments(data.comments);
         } else {
-          throw new Error('Invalid data structure from backend. Missing prosemirrorJson or currentCommitHash.');
+          throw new Error('Invalid data structure from backend.');
         }
       })
       .catch(error => {
         console.error('Failed to load document:', error);
         setStatus(`Error loading document: ${error.message}`);
-        // setEditorContent(dummyProseMirrorDoc); // Fallback to dummy data or show error
       });
   }, [repoId, filepath]);
 
-  // Update editor content if it changes (e.g. fetched)
+  // Update editor content when it's fetched (from main)
   useEffect(() => {
     if (editor && editorContent && !editor.isDestroyed) {
-        // Check if the new content is substantially different from current editor content
-        // to prevent unnecessary updates or cursor jumps.
-        // This simple check might need to be more sophisticated.
         if (JSON.stringify(editor.getJSON()) !== JSON.stringify(editorContent)) {
             editor.commands.setContent(editorContent);
         }
     }
   }, [editorContent, editor]);
 
-
+  // Commit handler from main
   const handleCommit = async () => {
     if (!editor || !baseCommitHash) {
       setStatus('Error: Editor not ready or no base commit hash.');
@@ -129,20 +133,20 @@ function EditorPage() {
     }
     if (!repoId || !filepath) {
         setStatus('Error: Repository ID or filepath not available for commit.');
-        console.error("repoId or filepath is missing for commit", {repoId, filepath});
         return;
     }
 
     const currentJson = editor.getJSON();
     setStatus('Committing...');
     try {
+      // TODO: When backend supports it, send comments along with commit.
       const response = await fetch('/api/docs/commit-qmd', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           repo_id: parseInt(repoId),
           filepath: filepath,
-          prosemirror_json: JSON.stringify(currentJson), // Send as string
+          prosemirror_json: JSON.stringify(currentJson),
           base_commit_hash: baseCommitHash,
         }),
       });
@@ -150,18 +154,30 @@ function EditorPage() {
         const errorData = await response.json();
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
-      const result = await response.json(); // Assuming backend returns { message: '...', newCommitHash: '...' }
+      const result = await response.json();
       setStatus('Committed');
       if (result.newCommitHash) {
-        setBaseCommitHash(result.newCommitHash); // Update base commit hash
+        setBaseCommitHash(result.newCommitHash);
         console.log('Successfully committed. New base commit hash:', result.newCommitHash);
-      } else {
-        console.log('Successfully committed. No new commit hash returned.');
       }
-      // Optionally, trigger a re-fetch or update editor state if needed
     } catch (error) {
       console.error('Failed to commit document:', error);
       setStatus(`Commit Failed: ${error.message}`);
+    }
+  };
+
+  // Add comment handler from feature/commenting
+  const addComment = () => {
+    if (!editor || !editor.state.selection.from || editor.state.selection.empty) {
+      alert('Please select text to comment on.');
+      return;
+    }
+    const commentText = prompt('Enter your comment:');
+    if (commentText) {
+      const newCommentId = `comment-${Date.now()}`;
+      setComments([...comments, { id: newCommentId, text: commentText }]);
+      editor.chain().focus().setComment(newCommentId).run();
+      setActiveCommentId(newCommentId);
     }
   };
 
@@ -173,6 +189,7 @@ function EditorPage() {
     <div className="editor-page-container">
       <header className="editor-header">
         <button onClick={() => navigate('/dashboard')}>← Back to Dashboard</button>
+        <button onClick={addComment} style={{ marginLeft: '1rem' }}>Add Comment</button>
         <div>
           <span>Status: {status} (Commit: {baseCommitHash ? baseCommitHash.substring(0, 7) : 'N/A'})</span>
           <button onClick={handleCommit} style={{ marginLeft: '1rem' }} disabled={status.includes('Saving') || status.includes('Committing...')}>
@@ -181,9 +198,16 @@ function EditorPage() {
         </div>
       </header>
 
-      <main className="editor-content-area">
-        <EditorContent editor={editor} />
-      </main>
+      <div className="editor-main-area">
+        <main className="editor-content-area">
+          <EditorContent editor={editor} />
+        </main>
+        <CommentSidebar
+          comments={comments}
+          activeCommentId={activeCommentId}
+          onCommentSelect={setActiveCommentId}
+        />
+      </div>
     </div>
   );
 }

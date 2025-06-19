@@ -38,6 +38,14 @@
     margin-bottom: 2rem; /* Space from bottom */
     box-sizing: border-box; /* Include padding in width calculation */
   }
+
+.editor-main-area {
+  display: flex;
+  flex-grow: 1;
+  overflow: hidden; /* Prevents scrollbars from appearing due to flexbox */
+  /* We want the main area to take up the available height below the header */
+  height: calc(100vh - 60px); /* Adjust 60px if your header height is different */
+}
   
   /* This is the direct parent of the TipTap editor content */
   /* We need to style it to look like a document */
@@ -68,6 +76,10 @@
     margin-top: 1.2em; /* Add space between paragraphs */
   }
 
+.comment-mark {
+  background-color: #ffe0b3; /* Light orange highlight for commented text */
+}
+
   /* Style for the new citation node */
 span[data-type="citation"],
 span[data-type="figure-reference"] {
@@ -86,4 +98,20 @@ span[data-type="figure-reference"]:hover {
 /* Ensure that captions within Quarto figures remain centered */
 .quarto-block-output figure figcaption {
     text-align: center;
+}
+
+/* Adjust .editor-content-area to be a flex child */
+.editor-content-area {
+  flex-grow: 1; /* Takes up available space in .editor-main-area */
+  /* The existing padding and max-width are fine, but remove margin-top/bottom
+     as vertical spacing is now handled by .editor-main-area and header */
+  padding: 2rem 1.5rem;
+  background-color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  overflow-y: auto; /* Allow editor content itself to scroll */
+  /* max-width and margin: 0 auto will still center it if there's extra horizontal space */
+  max-width: 800px;
+  margin: 0 auto; /* Center if sidebar is not present or if space allows */
+  height: 100%; /* Fill the height of .editor-main-area */
 }

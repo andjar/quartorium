@@ -7,6 +7,8 @@ import debounce from 'lodash.debounce';
 import QuartoBlock from '../components/editor/QuartoBlock';
 import Citation from '../components/editor/Citation';
 import FigureReference from '../components/editor/FigureReference';
+import CommentMark from '../components/editor/CommentMark';
+import CommentSidebar from '../components/editor/CommentSidebar';
 import './EditorPage.css';
 
 function CollabEditorPage() {
@@ -14,6 +16,8 @@ function CollabEditorPage() {
   const [status, setStatus] = useState('Loading...');
   const [error, setError] = useState('');
   const [baseCommitHash, setBaseCommitHash] = useState(null);
+  const [comments, setComments] = useState([]);
+  const [activeCommentId, setActiveCommentId] = useState(null);
 
   const handleCollabCommit = async () => {
     if (!baseCommitHash) {
@@ -29,7 +33,7 @@ function CollabEditorPage() {
       const response = await fetch(`/api/collab/${shareToken}/commit-qmd`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base_commit_hash: baseCommitHash }), // shareToken is in URL
+        body: JSON.stringify({ base_commit_hash: baseCommitHash }),
       });
       if (!response.ok) {
         const errorData = await response.json();
@@ -49,20 +53,21 @@ function CollabEditorPage() {
     }
   };
 
-  // --- Auto-save logic ---
   const saveDocument = useCallback(
     debounce(async (currentJsonContent) => {
       if (!baseCommitHash) {
         setStatus('Error: Base commit hash not available. Live changes not saved.');
         return;
       }
+      // TODO: When backend supports it, send comments as well.
+      // For now, only the document content is saved collaboratively.
       setStatus('Saving live changes...');
       try {
         const response = await fetch(`/api/collab/${shareToken}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prosemirror_json: JSON.stringify(currentJsonContent), // Ensure it's stringified
+            prosemirror_json: JSON.stringify(currentJsonContent),
             base_commit_hash: baseCommitHash,
           }),
         });
@@ -75,14 +80,13 @@ function CollabEditorPage() {
         console.error('Failed to save live changes:', saveError);
         setStatus(`Live save failed: ${saveError.message}`);
       }
-    }, 2000), // Debounce time: 2 seconds
-    [shareToken, baseCommitHash] // Added baseCommitHash as a dependency
+    }, 2000),
+    [shareToken, baseCommitHash]
   );
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        // Disable link extension from StarterKit since we're using our own
         link: false,
       }),
       Link.configure({
@@ -92,7 +96,11 @@ function CollabEditorPage() {
       }),
       QuartoBlock,
       Citation,
-      FigureReference
+      FigureReference,
+      CommentMark.configure({
+        HTMLAttributes: { class: 'comment-mark' },
+        onCommentClick: (commentId) => setActiveCommentId(commentId),
+      }),
     ],
     content: {
       type: 'doc',
@@ -108,12 +116,14 @@ function CollabEditorPage() {
   useEffect(() => {
     if (!editor || !shareToken) return;
     setStatus('Loading document...');
+
+    // TODO: When backend supports it, load comments along with the document.
+    // For now, comments are local to the session and start empty.
     fetch(`/api/collab/${shareToken}`)
       .then(res => {
         if (!res.ok) {
-          // Try to parse error from backend if available
           return res.json().then(errData => Promise.reject(errData.error || `HTTP error! status: ${res.status}`))
-                           .catch(() => Promise.reject(`HTTP error! status: ${res.status}`)); // Fallback if no JSON error body
+                           .catch(() => Promise.reject(`HTTP error! status: ${res.status}`));
         }
         return res.json();
       })
@@ -135,10 +145,9 @@ function CollabEditorPage() {
           throw new Error('Invalid data structure from backend. Missing prosemirrorJson or currentCommitHash.');
         }
       })
-      .catch(errMsg => { // Catches errors from fetch chain (network, parsing, or explicit Promise.reject)
+      .catch(errMsg => {
         console.error('Failed to load document:', errMsg);
         setError(typeof errMsg === 'string' ? errMsg : 'This share link is invalid or has expired.');
-        // Clear editor or show error content
         editor.commands.setContent({
           type: 'doc',
           content: [{
@@ -149,11 +158,27 @@ function CollabEditorPage() {
       });
   }, [editor, shareToken]);
 
+  const addComment = () => {
+    if (!editor || !editor.state.selection.from || editor.state.selection.empty) {
+      alert('Please select text to comment on.');
+      return;
+    }
+
+    const commentText = prompt('Enter your comment:');
+    if (commentText) {
+      const newCommentId = `comment-${Date.now()}`;
+      setComments([...comments, { id: newCommentId, text: commentText }]);
+      editor.chain().focus().setComment(newCommentId).run();
+      setActiveCommentId(newCommentId);
+    }
+  };
+
   return (
     <div className="editor-page-container">
       <header className="editor-header">
         <h3>Quartorium Collaborative Editor</h3>
         <div>
+          <button onClick={addComment} style={{ marginRight: '1rem' }}>Add Comment</button>
           <span>Status: {status} (Commit: {baseCommitHash ? baseCommitHash.substring(0, 7) : 'N/A'})</span>
           <button
             onClick={handleCollabCommit}
@@ -164,9 +189,16 @@ function CollabEditorPage() {
           </button>
         </div>
       </header>
-      <main className="editor-content-area">
-        {error ? <p style={{color: 'red'}}>{error}</p> : <EditorContent editor={editor} />}
-      </main>
+      <div className="editor-main-area">
+        <main className="editor-content-area">
+          {error ? <p style={{color: 'red'}}>{error}</p> : <EditorContent editor={editor} />}
+        </main>
+        <CommentSidebar
+          comments={comments}
+          activeCommentId={activeCommentId}
+          onCommentSelect={setActiveCommentId}
+        />
+      </div>
     </div>
   );
 }
