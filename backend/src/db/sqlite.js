@@ -80,8 +80,10 @@ const createShareLinksTable = () => {
       share_token TEXT UNIQUE NOT NULL,
       collab_branch_name TEXT NOT NULL,
       collaborator_label TEXT,
+      user_id INTEGER,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (doc_id) REFERENCES documents (id)
+      FOREIGN KEY (doc_id) REFERENCES documents (id),
+      FOREIGN KEY (user_id) REFERENCES users (id)
     )
   `;
   db.run(sql, (err) => {

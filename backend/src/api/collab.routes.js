@@ -178,42 +178,63 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
     }
 
     // 2. Retrieve link information (collab_branch_name, filepath, repo.full_name)
-    const linkInfo = await new Promise((resolve, reject) => {
+    //    AND the user_id who created the share link.
+    const linkAndUserInfo = await new Promise((resolve, reject) => {
       const sql = `
-        SELECT s.collab_branch_name, d.filepath, r.full_name
+        SELECT
+          s.collab_branch_name,
+          s.user_id,
+          d.filepath,
+          r.full_name,
+          u.username
         FROM share_links s
         JOIN documents d ON s.doc_id = d.id
         JOIN repositories r ON d.repo_id = r.id
+        LEFT JOIN users u ON s.user_id = u.id
         WHERE s.share_token = ?
       `;
       db.get(sql, [shareToken], (err, row) => {
-        if (err) return reject(new Error(`Database error fetching link info: ${err.message}`));
-        if (!row) return reject(new Error('Invalid share link.'));
-        resolve(row);
+        if (err) return reject(new Error(`Database error fetching link and user info: ${err.message}`));
+        if (!row) return reject(new Error('Invalid share link or associated user not found.'));
+        if (!row.user_id) return reject(new Error('Share link is not associated with a user.')); // Should not happen with FK
+        if (!row.username) { // If user was deleted but link persists, or if JOIN failed to find user
+            console.warn(`User not found for user_id ${row.user_id} associated with shareToken ${shareToken}. Using default author.`);
+            // Provide default values if username is not found to allow commit to proceed
+            resolve({ ...row, username: 'UnknownUser' });
+        } else {
+            resolve(row);
+        }
       });
     });
 
-    const projectDir = path.join(REPOS_DIR, linkInfo.full_name);
-    const collabBranchName = linkInfo.collab_branch_name;
-    const collabFilepath = linkInfo.filepath;
+    const projectDir = path.join(REPOS_DIR, linkAndUserInfo.full_name);
+    const collabBranchName = linkAndUserInfo.collab_branch_name;
+    const collabFilepath = linkAndUserInfo.filepath;
+    const authorName = linkAndUserInfo.username;
+    // Assuming email is not stored, create a placeholder.
+    // If github_id is available on users table and preferred, it could be used.
+    // For now, username@domain or user_id@domain.
+    const authorEmail = `${authorName.replace(/\s+/g, '_')}@quartorium.app`;
+
 
     // 3. Checkout collab branch
     await git.checkout({ fs, dir: projectDir, ref: collabBranchName });
-    console.log(`Checked out ${collabBranchName} for repo ${linkInfo.full_name}`);
+    console.log(`Checked out ${collabBranchName} for repo ${linkAndUserInfo.full_name}`);
 
     // 4. Fetch original QMD content from base_commit_hash on the collab branch
     let originalQmdContent;
     try {
-      const relativeFilepath = path.relative(projectDir, path.join(projectDir, collabFilepath));
+      const relativeFilepath = path.relative(projectDir, path.join(projectDir, collabFilepath)); // Ensure filepath is relative for readBlob
       const blobData = await git.readBlob({ fs, dir: projectDir, oid: base_commit_hash, filepath: relativeFilepath });
       originalQmdContent = Buffer.from(blobData.blob).toString('utf8');
     } catch (e) {
         console.warn(`Failed to read blob for ${collabFilepath} at ${base_commit_hash} on branch ${collabBranchName}: ${e.message}. Assuming new file or attempting HEAD.`);
         try {
+            // Fallback: try reading from the current HEAD of the branch if blob read fails
             originalQmdContent = await fs.readFile(path.join(projectDir, collabFilepath), 'utf8');
         } catch (readError) {
-            console.warn(`File ${collabFilepath} not found in ${collabBranchName} HEAD. Assuming new file.`);
-            originalQmdContent = "";
+            console.warn(`File ${collabFilepath} not found in ${collabBranchName} HEAD after blob read failure. Assuming new file.`);
+            originalQmdContent = ""; // If file doesn't exist at all (e.g. first commit of this file)
         }
     }
 
@@ -228,10 +249,8 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
     const newCommitHash = await git.commit({
       fs,
       dir: projectDir,
-      message: `Quartorium Collab: Update ${collabFilepath}`,
-      // TODO: Consider if author info can be more specific, e.g., from a user session if collaborator is logged in,
-      // or a generic collaborator name if they are anonymous.
-      author: { name: 'Quartorium Collaborator', email: 'collaborator@quartorium.app' },
+      message: `Quartorium Collab: Update ${collabFilepath} by ${authorName}`, // Added author name to message
+      author: { name: authorName, email: authorEmail }, // Use fetched user details
     });
 
     // 7. Cleanup: Delete the entry from live_documents for this shareToken
