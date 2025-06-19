@@ -3,25 +3,25 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ReactDiffViewer from 'react-diff-viewer';
 
 function ReviewPage() {
-  const { shareLinkId } = useParams();
+  const { shareToken } = useParams();
   const navigate = useNavigate();
   const [diffData, setDiffData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch(`/api/docs/diff/${shareLinkId}`, { credentials: 'include' })
+    fetch(`/api/docs/diff/${shareToken}`, { credentials: 'include' })
       .then(res => res.ok ? res.json() : Promise.reject(res))
       .then(data => setDiffData(data))
       .catch(() => setError('Could not load diff.'))
       .finally(() => setLoading(false));
-  }, [shareLinkId]);
+  }, [shareToken]);
 
   const handleMerge = () => {
     if (!window.confirm('Are you sure you want to merge these changes? This action cannot be undone.')) {
         return;
     }
-    fetch(`/api/docs/merge/${shareLinkId}`, { method: 'POST', credentials: 'include' })
+    fetch(`/api/docs/merge/${shareToken}`, { method: 'POST', credentials: 'include' })
       .then(res => {
         if (!res.ok) throw new Error('Merge failed');
         alert('Merge successful!');

@@ -267,34 +267,49 @@ function shareRouteLogic(db, git, uuidGenerator, projectBaseDir, fsForGit) {
 router.post('/share', shareRouteLogic(actualDb, actualGit, actualUuidv4, REPOS_DIR_path, actualFsForGit));
 
 
-// GET /api/docs/diff/:shareLinkId - Get a diff of a collaboration branch
-// router.get('/diff/:shareLinkId', async (req, res) => {
+// GET /api/docs/diff/:shareToken - Get a diff of a collaboration branch
+// router.get('/diff/:shareToken', async (req, res) => {
 function diffRouteLogic(db, git, fs, projectBaseDir) { // fs here is for readFile, not git's fs plugin
   return async (req, res) => {
-    const { shareLinkId } = req.params;
+    const { shareToken } = req.params;
 
     try {
+      console.log(`[Diff] Processing shareToken: ${shareToken}`);
+      
       // 1. Get all the necessary info for the two branches
       const linkInfo = await new Promise((resolve, reject) => {
         const sql = `
           SELECT 
             s.collab_branch_name, 
             d.filepath, 
-            r.full_name,
-            r.main_branch -- Assuming you have a main_branch column in your repos table
+            r.full_name
           FROM share_links s 
           JOIN documents d ON s.doc_id = d.id 
           JOIN repositories r ON d.repo_id = r.id 
-          WHERE s.id = ?
+          WHERE s.share_token = ?
         `;
-        db.get(sql, [shareLinkId], (err, row) => {
-          if (err || !row) return reject(new Error('Share link not found.'));
+        console.log(`[Diff] Executing SQL with shareToken: ${shareToken}`);
+        db.get(sql, [shareToken], (err, row) => {
+          if (err) {
+            console.error(`[Diff] Database error:`, err);
+            return reject(new Error(`Database error: ${err.message}`));
+          }
+          if (!row) {
+            console.error(`[Diff] No share link found for token: ${shareToken}`);
+            return reject(new Error('Share link not found.'));
+          }
+          console.log(`[Diff] Found link info:`, row);
           resolve(row);
         });
       });
 
-      const projectDir = actualPath.join(projectBaseDir, linkInfo.full_name); // Use injected projectBaseDir
-      const mainBranch = linkInfo.main_branch || 'main'; // Default to 'main'
+      const projectDir = actualPath.join(projectBaseDir, linkInfo.full_name);
+      const mainBranch = 'main'; // Default to 'main' since main_branch column doesn't exist
+
+      console.log(`[Diff] Project directory: ${projectDir}`);
+      console.log(`[Diff] Main branch: ${mainBranch}`);
+      console.log(`[Diff] Collab branch: ${linkInfo.collab_branch_name}`);
+      console.log(`[Diff] Filepath: ${linkInfo.filepath}`);
 
       // 2. Get content from the main branch
       await git.checkout({ fs: actualFsForGit, dir: projectDir, ref: mainBranch }); // git needs actualFsForGit
@@ -307,6 +322,7 @@ function diffRouteLogic(db, git, fs, projectBaseDir) { // fs here is for readFil
       // 4. Generate the diff (Original diff logic, can be kept as is or moved to a helper)
       // const diff = Diff.diffLines(mainContent, collabContent);
 
+      console.log(`[Diff] Successfully read both files, returning diff data`);
       res.json({
         mainContent,
         collabContent,
@@ -316,11 +332,11 @@ function diffRouteLogic(db, git, fs, projectBaseDir) { // fs here is for readFil
 
     } catch (error) {
       console.error('Error generating diff:', error);
-      res.status(500).json({ error: 'Failed to generate diff.' });
+      res.status(500).json({ error: `Failed to generate diff: ${error.message}` });
     }
   };
 }
-router.get('/diff/:shareLinkId', diffRouteLogic(actualDb, actualGit, actualFs, REPOS_DIR_path));
+router.get('/diff/:shareToken', diffRouteLogic(actualDb, actualGit, actualFs, REPOS_DIR_path));
 
 
 // POST /api/docs/get-or-create - Finds a doc or creates it, returns the ID
@@ -369,6 +385,118 @@ router.get('/:docId/shares', async (req, res) => {
 
   } catch (error) {
     console.error('Error getting share links for doc:', docId, error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/docs/merge/:shareToken - Merge collaboration branch into main branch
+router.post('/merge/:shareToken', async (req, res) => {
+  const { shareToken } = req.params;
+
+  try {
+    // 1. Get share link information
+    const linkInfo = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT 
+          s.collab_branch_name, 
+          d.filepath, 
+          r.full_name,
+          r.id as repo_id
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.share_token = ?
+      `;
+      actualDb.get(sql, [shareToken], (err, row) => {
+        if (err || !row) return reject(new Error('Share link not found.'));
+        resolve(row);
+      });
+    });
+
+    // 2. Verify user owns the repository
+    const repo = await new Promise((resolve, reject) => {
+      actualDb.get('SELECT * FROM repositories WHERE id = ? AND user_id = ?', [linkInfo.repo_id, req.user.id], (err, row) => {
+        if (err || !row) return reject(new Error('Repository not found or access denied.'));
+        resolve(row);
+      });
+    });
+
+    const projectDir = actualPath.join(REPOS_DIR_path, linkInfo.full_name);
+    const mainBranch = 'main';
+
+    // 3. Checkout main branch
+    await actualGit.checkout({ fs: actualFsForGit, dir: projectDir, ref: mainBranch });
+
+    // 4. Merge the collaboration branch into main
+    try {
+      await actualGit.merge({ 
+        fs: actualFsForGit, 
+        dir: projectDir, 
+        theirs: linkInfo.collab_branch_name,
+        author: {
+          name: req.user.username || 'Quartorium User',
+          email: req.user.email || `${req.user.username || 'user'}@quartorium.app`
+        },
+        message: `Merge collaboration branch: ${linkInfo.collab_branch_name}`
+      });
+    } catch (mergeError) {
+      // If merge fails due to conflicts, return error
+      if (mergeError.message.includes('conflict')) {
+        return res.status(409).json({ error: 'Merge conflict detected. Please resolve conflicts manually.' });
+      }
+      throw mergeError;
+    }
+
+    // 5. Optionally delete the collaboration branch after successful merge
+    try {
+      await actualGit.deleteBranch({ fs: actualFsForGit, dir: projectDir, ref: linkInfo.collab_branch_name });
+    } catch (deleteError) {
+      console.warn(`Failed to delete collaboration branch ${linkInfo.collab_branch_name}:`, deleteError.message);
+      // Don't fail the merge if branch deletion fails
+    }
+
+    res.json({ message: 'Merge completed successfully' });
+
+  } catch (error) {
+    console.error('Error merging branches:', error);
+    res.status(500).json({ error: error.message || 'Failed to merge branches.' });
+  }
+});
+
+// GET /api/docs/debug/shares - Debug endpoint to list all share links
+router.get('/debug/shares', async (req, res) => {
+  try {
+    const links = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT 
+          s.id,
+          s.share_token,
+          s.collab_branch_name,
+          s.collaborator_label,
+          d.filepath,
+          r.full_name
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        ORDER BY s.created_at DESC
+      `;
+      actualDb.all(sql, [], (err, rows) => {
+        if (err) {
+          console.error('Database error fetching all share links:', err);
+          return reject(new Error('Failed to retrieve share links.'));
+        }
+        resolve(rows);
+      });
+    });
+
+    res.json({ 
+      message: 'All share links in database',
+      count: links.length,
+      links 
+    });
+
+  } catch (error) {
+    console.error('Error getting all share links:', error);
     res.status(500).json({ error: error.message });
   }
 });

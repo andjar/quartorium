@@ -16,7 +16,7 @@ function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/editor" element={<EditorPage />} />
           <Route path="/collab/:shareToken" element={<CollabEditorPage />} />
-          <Route path="/review/:shareLinkId" element={<ReviewPage />} />
+          <Route path="/review/:shareToken" element={<ReviewPage />} />
         </Routes>
       </div>
     </BrowserRouter>
