@@ -164,6 +164,18 @@ function CollabEditorPage() {
     },
   });
 
+  // Add effect to save when comments change
+  useEffect(() => {
+    if (editor && comments.length > 0) {
+      console.log('Comments changed, triggering save...');
+      // Use setTimeout to avoid immediate execution and potential race conditions
+      const timeoutId = setTimeout(() => {
+        saveDocument(editor.getJSON());
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [comments, editor]); // Remove saveDocument from dependencies to avoid infinite loops
+
   // Add a check to see if editor is created
   useEffect(() => {
     console.log('Editor state check:', { editor: !!editor, shareToken });
