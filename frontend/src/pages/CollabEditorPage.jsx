@@ -29,7 +29,7 @@ function CollabEditorPage() {
 
   // Placeholder for current user - replace with actual user context/auth later
   const currentUser = { 
-    id: `user-${Math.random().toString(36).substr(2, 9)}`, 
+    id: collaboratorLabel || `user-${Math.random().toString(36).substr(2, 9)}`, 
     name: collaboratorLabel || 'Current User' 
   };
 
@@ -266,13 +266,13 @@ function CollabEditorPage() {
       const newCommentId = `c-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
       const newComment = {
         id: newCommentId,
-        author: currentUser.id, // Using placeholder
+        author: collaboratorLabel || currentUser.id, // Use collaboratorLabel if available
         timestamp: new Date().toISOString(),
         status: "open",
         thread: [
           {
             text: commentText,
-            author: currentUser.id, // Using placeholder
+            author: collaboratorLabel || currentUser.id, // Use collaboratorLabel if available
             timestamp: new Date().toISOString()
           }
         ]
