@@ -14,23 +14,37 @@ const { parseStringPromise } = require('xml2js');
  * @returns {Promise<{jatsXml: string, assetsCachePath: string | null}>} - The parsed JATS XML string and the path to the cached assets directory.
  */
 async function renderToJATS(qmdFilepath, projectDir, repoId, commitHash) {
-  // 1. Create a temporary directory to work in.
-  const tempRenderDir = await fs.mkdtemp(path.join(os.tmpdir(), 'quartorium-render-'));
+  const docName = path.parse(qmdFilepath).name;
+  const outputXmlFilename = `${docName}.xml`;
   
+  // Define a single cache directory for this specific render
+  const renderCacheDir = path.join(CACHE_DIR, 'renders', String(repoId), commitHash);
+  const cachedXmlPath = path.join(renderCacheDir, outputXmlFilename);
+
+  // 1. Check if a cached version already exists.
   try {
-    // 2. Copy the entire project content to the temporary directory.
+    await fs.access(cachedXmlPath);
+    console.log(`Cache hit for ${repoId}/${commitHash}. Reading from cache at ${cachedXmlPath}.`);
+    const jatsXml = await fs.readFile(cachedXmlPath, 'utf8');
+    // Assets are in the same directory, so we pass the directory path.
+    return { jatsXml, assetsCachePath: renderCacheDir };
+  } catch (error) {
+    // Cache miss, proceed with rendering.
+    console.log(`Cache miss for ${repoId}/${commitHash}. Rendering document.`);
+  }
+
+  // If we've reached here, it's a cache miss.
+  const tempRenderDir = await fs.mkdtemp(path.join(os.tmpdir(), 'quartorium-render-'));
+
+  try {
+    // 2. Copy the project into the temporary directory to keep the original clean.
     await fs.cp(projectDir, tempRenderDir, { recursive: true });
 
-    // 3. Define paths relative to the new temporary directory.
+    // 3. Construct the Quarto command WITHOUT specifying output.
     const inputFilename = path.basename(qmdFilepath);
-    const outputXmlFilename = `${path.parse(inputFilename).name}.xml`;
-    // The output is placed in a subdirectory by default in this project setup.
-    const outputXmlPath = path.join(tempRenderDir, '_manuscript', outputXmlFilename);
-
-    // 4. Construct the Quarto command to render to JATS.
     const command = `quarto render "${inputFilename}" --to jats`;
 
-    // 5. Execute the command from *inside the temporary directory*.
+    // 4. Execute the command from *inside the temporary directory*.
     await new Promise((resolve, reject) => {
       exec(command, { cwd: tempRenderDir }, (error, stdout, stderr) => {
         if (error) {
@@ -42,38 +56,61 @@ async function renderToJATS(qmdFilepath, projectDir, repoId, commitHash) {
       });
     });
 
-    // 6. Read the XML file that Quarto created in the temp directory.
-    const jatsXml = await fs.readFile(outputXmlPath, 'utf8');
+    // 5. Locate the output XML file. Quarto might place it in a subdirectory.
+    const findXmlOutput = async (dir) => {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                // Avoid recursing into the assets directory, which can be large.
+                if (!entry.name.endsWith('_files')) {
+                    const result = await findXmlOutput(fullPath);
+                    if (result) return result;
+                }
+            } else if (entry.name === outputXmlFilename) {
+                return fullPath;
+            }
+        }
+        return null;
+    };
 
-    // 7. The assets are in a sub-directory relative to where the XML output was saved.
-    const outputDir = path.dirname(outputXmlPath);
-    const assetsDir = path.join(outputDir, `${path.parse(inputFilename).name}_files`);
-    
-    // 8. Copy the rendered assets to the cache directory.
-    const originalDocNameFiles = path.parse(qmdFilepath).name + '_files';
-    const newAssetsCachePath = path.join(CACHE_DIR, 'assets', repoId, commitHash, originalDocNameFiles);
-    let assetsCachePath = null;
-
-    try {
-      await fs.access(assetsDir); // Check if temporary assets directory exists
-      await fs.mkdir(newAssetsCachePath, { recursive: true });
-      await fs.cp(assetsDir, newAssetsCachePath, { recursive: true });
-      assetsCachePath = newAssetsCachePath;
-      console.log(`Assets copied from ${assetsDir} to ${newAssetsCachePath}`);
-    } catch (error) {
-      // This error means the assets directory doesn't exist (e.g., no figures) or failed to copy.
-      console.log(`No assets directory found at ${assetsDir}, or error copying: ${error.message}. This might be normal if the document has no figures.`);
-      // assetsCachePath remains null
+    const renderedXmlPath = await findXmlOutput(tempRenderDir);
+    if (!renderedXmlPath) {
+        throw new Error(`Could not find the rendered XML file '${outputXmlFilename}' in the output.`);
     }
+
+    const outputDir = path.dirname(renderedXmlPath);
+    const renderedAssetsPath = path.join(outputDir, `${docName}_files`);
+
+    // 6. Move the located files to the permanent cache.
+    await fs.mkdir(renderCacheDir, { recursive: true });
     
-    return { jatsXml, assetsCachePath };
+    // Move XML file
+    await fs.rename(renderedXmlPath, cachedXmlPath);
+    
+    // Move assets directory if it exists
+    try {
+      await fs.access(renderedAssetsPath);
+      await fs.rename(renderedAssetsPath, path.join(renderCacheDir, `${docName}_files`));
+    } catch (e) {
+      console.log(`No assets directory found at ${renderedAssetsPath} to move.`);
+    }
+
+    // 7. Read the XML file that is now in the cache.
+    const jatsXml = await fs.readFile(cachedXmlPath, 'utf8');
+    
+    return { jatsXml, assetsCachePath: renderCacheDir };
 
   } catch (e) {
     console.error("Failed during JATS rendering process.", e);
+    // Attempt to clean up the partially created cache directory on failure.
+    await fs.rm(renderCacheDir, { recursive: true, force: true }).catch(err => 
+      console.error(`Failed to clean up cache directory ${renderCacheDir}`, err)
+    );
     throw new Error("Failed to process Quarto's JATS output.");
   } finally {
-    // 9. Clean up the temporary directory after we're done.
-    // await fs.rm(tempRenderDir, { recursive: true, force: true });
+    // 8. Clean up the temporary directory.
+    await fs.rm(tempRenderDir, { recursive: true, force: true });
   }
 }
 
@@ -322,7 +359,9 @@ function processFig(figElement, repoId, code, language, commitHash, docFilepath)
 
   const graphicEl = figElement.querySelector('graphic');
   const imageSrc = graphicEl?.getAttribute('xlink:href') || graphicEl?.getAttribute('href') || '';
-  const rewrittenSrc = imageSrc ? `/api/assets/${repoId}/${commitHash}/${originalDocNameFiles}/${imageSrc}` : '';
+  // The imageSrc from JATS is already relative to the output directory root,
+  // so it includes the necessary '..._files' directory.
+  const rewrittenSrc = imageSrc ? `/api/assets/${repoId}/${commitHash}/${imageSrc}` : '';
   // Use the full caption text for the alt attribute for accessibility.
   const altText = `${figLabel} ${figCaption}`.trim();
   const imageHtml = rewrittenSrc ? `<img src="${rewrittenSrc}" alt="${altText}" style="max-width: 100%; height: auto;" />` : '';

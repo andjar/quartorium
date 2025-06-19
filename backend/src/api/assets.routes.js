@@ -9,43 +9,30 @@ const CACHE_DIR = path.join(__dirname, '../../cache');
 
 // This endpoint is public but the paths are unguessable.
 // In a production app, you might add more security here.
-// GET /api/assets/:repoId/figure-html/plot-1.png
+// Example: /api/assets/1/a1b2c3d4/index_files/figure-jats/fig.png
 // NOTE: The ':assetPath(*)' is a wildcard to capture the full file path.
-router.get('/:repoId/:assetPath(*)', (req, res) => {
-  const { repoId, assetPath } = req.params;
+router.get('/:repoId/:commitHash/:assetPath(*)', (req, res) => {
+  const { repoId, commitHash, assetPath } = req.params;
 
-  // This is a simplified security check. It assumes that if a user could
-  // render the doc, they have rights to see the assets.
-  // We are NOT checking user authentication here to allow the public
-  // collaborator view to work.
+  // Basic path traversal protection
+  const safeAssetPath = path.normalize(assetPath).replace(/^(\.\.[\/\\])+/, '');
   
-  // A better security model would involve checking a session or token,
-  // but for now, we rely on the obscurity of the asset path.
+  // Construct the asset path using the new cache structure
+  const fullAssetPath = path.join(CACHE_DIR, 'renders', repoId, commitHash, safeAssetPath);
+  
+  // More robust security check
+  const safeResolvedPath = path.resolve(fullAssetPath);
+  const expectedCacheBase = path.resolve(path.join(CACHE_DIR, 'renders'));
+  if (!safeResolvedPath.startsWith(expectedCacheBase)) {
+    return res.status(403).send('Forbidden');
+  }
 
-  // Look up the repository's full_name from its ID
-  db.get('SELECT full_name FROM repositories WHERE id = ?', [repoId], (err, row) => {
-    if (err || !row) {
-      return res.status(404).send('Repository not found');
-    }
-    
-    const repoFullName = row.full_name; // Still needed for validation that repoId is legit, but not for path
-    
-    // Construct the asset path using CACHE_DIR, repoId, and the assetPath from the URL
-    // assetPath is expected to be: {commitHash}/{originalDocName_files}/{filename}
-    const fullAssetPath = path.join(CACHE_DIR, 'assets', repoId, assetPath);
-
-    // Basic path traversal protection
-    const safePath = path.resolve(fullAssetPath);
-    // Ensure the path is within the designated cache assets directory
-    if (!safePath.startsWith(path.resolve(path.join(CACHE_DIR, 'assets')))) {
-      return res.status(403).send('Forbidden');
-    }
-
-    res.sendFile(safePath, (err) => {
-      if (err) {
+  res.sendFile(safeResolvedPath, (err) => {
+    if (err) {
+      if (!res.headersSent) {
         res.status(404).send('Asset not found');
       }
-    });
+    }
   });
 });
 

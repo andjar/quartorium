@@ -52,7 +52,7 @@ backend/src/db/quartorium.db-journal
 backend/repos/
 
 # Cache for rendered Quarto chunks (we'll create this later)
-backend/.cache/
+backend/cache/
 
 # ===================================================================
 # Frontend Specific (Vite / React)

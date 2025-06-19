@@ -274,63 +274,6 @@ router.get('/diff/:shareLinkId', async (req, res) => {
   }
 });
 
-// POST /api/collab/:shareToken - Save changes from a collaborator
-router.post('/:shareToken', async (req, res) => {
-  const { shareToken } = req.params;
-  const proseMirrorDoc = req.body; // The JSON from the editor
-
-  if (!proseMirrorDoc || !proseMirrorDoc.type) {
-      return res.status(400).json({ error: 'Invalid document format received.' });
-  }
-
-  try {
-    // 1. Find the share link and associated document/repo info
-    const linkInfo = await new Promise((resolve, reject) => {
-      const sql = `
-        SELECT s.collab_branch_name, d.filepath, r.full_name 
-        FROM share_links s 
-        JOIN documents d ON s.doc_id = d.id 
-        JOIN repositories r ON d.repo_id = r.id 
-        WHERE s.share_token = ?
-      `;
-      db.get(sql, [shareToken], (err, row) => {
-        if (err || !row) return reject(new Error('Invalid share link.'));
-        resolve(row);
-      });
-    });
-
-    // 2. Serialize the ProseMirror JSON back into a .qmd string
-    const newQmdContent = proseMirrorJSON_to_qmd(proseMirrorDoc);
-
-    // 3. Write the new content to the file and commit it to the collaboration branch
-    const projectDir = path.join(REPOS_DIR, linkInfo.full_name);
-    const fullFilepath = path.join(projectDir, linkInfo.filepath);
-
-    await git.checkout({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
-    await fs.writeFile(fullFilepath, newQmdContent);
-    
-    await git.add({ fs, dir: projectDir, filepath: linkInfo.filepath });
-
-    await git.commit({
-      fs,
-      dir: projectDir,
-      message: 'Update from collaborator via Quartorium',
-      author: {
-        name: 'Quartorium Collaborator',
-        email: 'collaborator@quartorium.app',
-      },
-    });
-
-    console.log(`Changes committed to branch: ${linkInfo.collab_branch_name}`);
-    // Return a successful status
-    res.status(200).json({ status: 'saved' });
-
-  } catch (error) {
-    console.error('Error saving collab doc:', error);
-    res.status(500).json({ error: 'Failed to save changes.' });
-  }
-});
-
 // POST /api/docs/get-or-create - Finds a doc or creates it, returns the ID
 router.post('/get-or-create', async (req, res) => {
   const { repoId, filepath } = req.body;

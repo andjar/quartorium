@@ -35,10 +35,13 @@ router.get('/:shareToken', async (req, res) => {
     const projectDir = path.join(REPOS_DIR, linkInfo.full_name);
     await git.checkout({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
 
-    // 3. Render the document from that branch
+    // 3. Get the current commit hash for the collaboration branch
+    const commitHash = await git.resolveRef({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
+
+    // 4. Render the document from that branch
     const fullFilepath = path.join(projectDir, linkInfo.filepath);
-    const { jatsXml } = await renderToJATS(fullFilepath, projectDir);
-    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, linkInfo.repoId);
+    const { jatsXml } = await renderToJATS(fullFilepath, projectDir, linkInfo.repoId, commitHash);
+    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, linkInfo.repoId, commitHash, fullFilepath);
     
     res.json(proseMirrorJson);
 
@@ -49,11 +52,6 @@ router.get('/:shareToken', async (req, res) => {
 });
 
 // POST /api/collab/:shareToken - Save changes from a collaborator
-router.post('/:shareToken', async (req, res) => {
-    // We will implement this after creating the serializer
-    res.status(501).json({ message: 'Saving not yet implemented.' });
-});
-
 router.post('/:shareToken', async (req, res) => {
     const { shareToken } = req.params;
     const proseMirrorDoc = req.body; // The JSON from the editor
@@ -105,4 +103,4 @@ router.post('/:shareToken', async (req, res) => {
     }
   });
   
-  module.exports = router;
+module.exports = router;
