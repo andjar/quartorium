@@ -2,7 +2,7 @@
 
 **Guiding Principle:** Each epic should result in a demonstrable new capability for the application. We prioritize the core user journey first: Author connects repo -> Collaborator edits -> Author reviews.
 
-### Epic 1: Foundation & User Authentication
+### **[COMPLETED]** Epic 1: Foundation & User Authentication
 
 **Goal:** A user can log in with GitHub and see a list of their repositories. This validates the core user model and our connection to GitHub.
 
@@ -17,7 +17,7 @@
 
 **🏁 End of Epic 1 Result:** A user can visit the site, click "Login," be redirected to GitHub, authorize the app, and be redirected back to a dashboard showing their username.
 
-### Epic 2: Repository & Document Browsing
+### **[COMPLETED]** Epic 2: Repository & Document Browsing
 
 **Goal:** A logged-in user can connect a GitHub repository to Quartorium and see a list of the `.qmd` files within it.
 
@@ -35,7 +35,7 @@
 
 **🏁 End of Epic 2 Result:** A user can add their project repository and see "paper1/manuscript.qmd" listed in the UI, ready to be edited.
 
-### **Epic 3 Specification: The Read-Only Editor (Render-to-JSON-AST Architecture)**
+### **[COMPLETED]** Epic 3 Specification: The Read-Only Editor (Render-to-JSON-AST Architecture)
 
 **Goal:** Clicking a `.qmd` file opens a new page that displays a fully rendered, high-fidelity, read-only version of the document. This will be achieved by leveraging Quarto's native JSON Abstract Syntax Tree (AST) output for maximum fidelity, performance, and reliability.
 
@@ -90,8 +90,9 @@ This architecture is a pure backend improvement. The contract with the frontend 
 *   **Task 3.7 (No Change):** The routing and linking from the dashboard to the editor page remain the same.
 
 **🏁 End of Epic 3 Result:** A user can click on a `.qmd` file and see a fast, pixel-perfect, read-only preview of their paper. The architecture is now built on Quarto's most fundamental and stable output format, ensuring long-term reliability and performance. All future features are now built on rock-solid ground.
+*Implementation Note: The final parsing strategy evolved to use a direct Quarto-to-ProseMirror conversion (`quartoParser.js`) for improved efficiency and accuracy over the initially proposed multi-step JATS conversion.*
 
-### Epic 4 Specification: The Collaborative Editing Workflow
+### **[COMPLETED]** Epic 4 Specification: The Collaborative Editing Workflow
 
 **Goal:** To enable the full "Collaborator" experience. An Author can generate unique share links for a document. Anyone with a link can edit the document in a WYSIWYG editor, with their changes being saved automatically to a dedicated, isolated Git branch.
 
@@ -161,18 +162,20 @@ This is what the collaborator's browser calls to load the document.
 This is called by the collaborator's editor to save changes.
 *   **Request Body:** The full ProseMirror JSON object representing the document state.
 *   **Logic:**
-    1.  Find the `share_links` record matching the `shareToken`. If not found, return `404`.
+    1.  Find the `share_links` record matching the `shareToken`. If not found, return `404`. Changes from the collaborator are first saved to an intermediary `live_documents` table for real-time updates.
     2.  Get the `collab_branch_name` and `filepath`.
     3.  Use the **`prosemirror.serializer.js`** (to be created) to convert the incoming JSON back into a `.qmd` string.
     4.  Use the Git client to:
         a. Check out the `collab_branch_name`.
         b. Write the new `.qmd` string to the correct `filepath`.
         c. Commit the change with a generic message (e.g., "Update from collaborator via quartorium").
+        e. (New) A separate process or endpoint (`POST /api/collab/:shareToken/commit-qmd`) is later used to take the content from `live_documents`, convert it back to QMD, and then commit it to the `collab_branch_name`.
     5.  **Response:** `200 OK` with `{ "status": "saved" }`.
 
 #### 4. Core Logic Modules (Backend)
 
 *   **`prosemirror.serializer.js` (New Module):** This is the inverse of the parser from Epic 3. It must reliably take a ProseMirror JSON object and reconstruct the original `.qmd` file format, including YAML frontmatter and code chunk syntax (` ```{r} ... ``` `). This is a critical piece for "round-trip" integrity.
+*   *`live_documents` Table: An intermediary SQLite table was introduced to store live, unsaved changes from collaborators (and authors) before they are formally committed to a Git branch. This allows for more frequent, real-time saving without creating excessive Git commits.*
 
 #### 5. Frontend Tasks
 
@@ -196,9 +199,10 @@ This is called by the collaborator's editor to save changes.
     *   The debounced function will take the latest editor state (as JSON), and `POST` it to `/api/collab/:shareToken`.
     *   Add a small UI indicator (e.g., "Saving..." -> "Saved") to give the collaborator confidence their work is being saved.
 
+*Implementation Note: The saving mechanism was enhanced with a `live_documents` table to stage changes, providing a more robust real-time experience. The core `proseMirrorJSON_to_qmd` serializer (found in `astSerializer.js`) is implemented and handles the conversion back to QMD format, including comments.*
 **🏁 End of Epic 4 Result:** The Author can generate multiple, isolated share links for a document. A collaborator can open a link, edit the text of the Quarto document in a clean WYSIWYG editor, and have their changes automatically saved to a specific Git branch in the Author's repository, ready for review in Epic 5.
 
-### Epic 5: Reviewing & Merging
+### **[COMPLETED]** Epic 5: Reviewing & Merging
 
 **Goal:** The author can see a visual representation of the collaborator's changes and merge them into the main branch.
 
@@ -210,8 +214,9 @@ This is called by the collaborator's editor to save changes.
 *   **Task 5.6 (Stretch Goal):** Instead of a simple panel, create a custom TipTap extension that visually highlights the diffs directly within the editor text (e.g., green for additions, red strikethrough for deletions).
 
 **🏁 End of Epic 5 Result:** The entire core loop is complete. An author can manage the full lifecycle of feedback from a non-technical collaborator, all within the app.
+*Implementation Note: The backend endpoints for diffing (`/api/docs/diff/:shareToken`) and merging (`/api/docs/merge/:shareToken`) are implemented, allowing authors to review and integrate collaborator changes.*
 
-### **Epic 6: Commenting & Discussion (New Epic)**
+### **[COMPLETED]** Epic 6: Commenting & Discussion
 
 **Goal:** To allow collaborators and authors to have threaded conversations attached to specific parts of the document. The entire comment history will be stored directly within the `.qmd` file, making it portable and version-controlled.
 
@@ -279,9 +284,34 @@ This is called by the collaborator's editor to save changes.
     *   The UI will allow users to reply to threads and mark them as "resolved," which will update the state object.
 
 **🏁 End of Epic 6 Result:** A user can highlight any piece of text, add a comment, and engage in a threaded discussion. The comments appear cleanly in the margin. When the document is saved, all comments are stored inside the `.qmd` file itself, creating a fully self-contained, version-controlled document with both content and context.
+*Implementation Note: The commenting feature is implemented. Comments are stored using a combination of inline HTML anchors (`<!-- quartorium-comment-anchor ... -->`) and a JSON metadata block within the QMD file, as proposed. The `commentUtils.js` module handles parsing and serialization of these comments, and the backend routes (`/api/collab/:shareToken` and `/api/docs/view`) integrate this logic to pass comment data to the frontend.*
+
+### Epic 7: Real-time Authoring and Collaboration Persistence (Implemented Feature)
+
+**Goal:** To provide a more seamless and real-time editing experience for both authors and collaborators by immediately persisting unsaved changes before they are formally committed to Git. This feature enhances data safety and user experience by reducing the risk of data loss from accidental closures or interruptions.
+
+**Core Component:** `live_documents` Table
+
+*   An SQLite table (`live_documents`) was introduced to serve as an intermediary storage for live document states.
+*   For **authors**, when editing their own documents, changes can be periodically saved to this table linked to the repository and filepath.
+*   For **collaborators**, when editing a shared document, their changes are saved to this table linked to the unique `shareToken`.
+*   This table typically stores the full ProseMirror JSON representation of the document and any associated comment data.
+
+**Backend API Endpoints & Logic:**
+
+*   **Author-facing (via `live_docs.routes.js`):**
+    *   `POST /api/docs/save-json`: Allows the author's editor to send the current ProseMirror JSON and base commit hash, which is then saved or updated in the `live_documents` table for the given `repo_id` and `filepath`.
+    *   `POST /api/docs/commit-qmd`: The author can trigger this endpoint to take the latest content from `live_documents`, convert it back to a `.qmd` string (using `astSerializer.js`), and commit it to the main branch of their repository. The corresponding entry in `live_documents` is then typically cleared.
+
+*   **Collaborator-facing (enhancements in `collab.routes.js`):**
+    *   `POST /api/collab/:shareToken`: Saves the collaborator's ProseMirror JSON and comments to the `live_documents` table against their `shareToken`. This provides immediate persistence.
+    *   `POST /api/collab/:shareToken/commit-qmd`: An author (or an automated process) can trigger this to take the collaborator's staged changes from `live_documents`, convert them to QMD, and commit them to the specific `collab_branch_name`. The `live_documents` entry is then cleared.
+    *   `GET /api/collab/:shareToken`: When a collaborator loads a document, the system first checks `live_documents` for any unsaved changes associated with their `shareToken`. If found, this live version is served; otherwise, the document is rendered from the Git branch.
+
+**🏁 Result:** This system provides a more robust editing experience. Authors and collaborators see their changes saved quickly without waiting for slower Git operations. Formal Git commits become more deliberate actions to finalize a set of changes, while the `live_documents` table handles the frequent, incremental updates common during an editing session. This feature was implemented across various parts of the backend, notably in `live_docs.routes.js`, `collab.routes.js`, and through modifications in how document data is fetched and saved.
 
 ### Future Epics (Post-V1)
 
-*   **Epic 7: Granular Accept/Reject:** Move beyond "Merge All" to allowing authors to accept/reject individual changes.
-*   **Epic 8: Polishing & UX:** Improve loading states, error handling, caching, and overall user experience.
-*   **Epic 9: Production Hardening:** Re-introduce Docker for sandboxing `quarto render` calls for a secure, public-facing deployment.
+*   **Epic 8: Granular Accept/Reject:** Move beyond "Merge All" to allowing authors to accept/reject individual changes.
+*   **Epic 9: Polishing & UX:** Improve loading states, error handling, caching, and overall user experience.
+*   **Epic 10: Production Hardening:** Re-introduce Docker for sandboxing `quarto render` calls for a secure, public-facing deployment.
