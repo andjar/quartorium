@@ -17,7 +17,41 @@ router.get('/:shareToken', async (req, res) => {
   const { shareToken } = req.params;
 
   try {
-    // 1. Find the share link and associated document/repo info
+    // 1. First, check if there are any unsaved changes in live_documents
+    const liveDoc = await new Promise((resolve, reject) => {
+      db.get('SELECT prosemirror_json, base_commit_hash FROM live_documents WHERE share_token = ?', [shareToken], (err, row) => {
+        if (err) {
+          console.error('Error checking live_documents:', err.message);
+          resolve(null); // Continue with branch rendering if there's a DB error
+        } else {
+          resolve(row);
+        }
+      });
+    });
+
+    // 2. If we have unsaved changes, return them
+    if (liveDoc) {
+      console.log(`Returning unsaved changes for shareToken ${shareToken}`);
+      let prosemirrorJson;
+      try {
+        prosemirrorJson = JSON.parse(liveDoc.prosemirror_json);
+      } catch (e) {
+        console.error('Failed to parse stored prosemirror_json:', e);
+        // Fall through to branch rendering if parsing fails
+      }
+      
+      if (prosemirrorJson) {
+        return res.json({ 
+          prosemirrorJson: prosemirrorJson, 
+          currentCommitHash: liveDoc.base_commit_hash 
+        });
+      }
+    }
+
+    // 3. If no unsaved changes, render from the collaboration branch
+    console.log(`No unsaved changes found for shareToken ${shareToken}, rendering from branch`);
+    
+    // Find the share link and associated document/repo info
     const linkInfo = await new Promise((resolve, reject) => {
       const sql = `
         SELECT s.*, d.filepath, r.id as repoId, r.full_name 
@@ -32,19 +66,19 @@ router.get('/:shareToken', async (req, res) => {
       });
     });
 
-    // 2. Check out the specific collaboration branch
+    // Check out the specific collaboration branch
     const projectDir = path.join(REPOS_DIR, linkInfo.full_name);
     await git.checkout({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
 
-    // 3. Get the current commit hash for the collaboration branch
+    // Get the current commit hash for the collaboration branch
     const commitHash = await git.resolveRef({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
 
-    // 4. Read the original QMD file to create the blockMap
+    // Read the original QMD file to create the blockMap
     const fullFilepath = path.join(projectDir, linkInfo.filepath);
     const qmdContent = await fs.readFile(fullFilepath, 'utf8');
     const { blockMap } = parseQmd(qmdContent);
 
-    // 5. Render the document from that branch
+    // Render the document from that branch
     const { jatsXml } = await renderToJATS(fullFilepath, projectDir, linkInfo.repoId, commitHash);
     const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, blockMap, linkInfo.repoId, commitHash, fullFilepath);
     

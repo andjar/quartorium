@@ -108,7 +108,10 @@ const createLiveDocumentsTable = () => {
       base_commit_hash TEXT NOT NULL,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (repo_id) REFERENCES repositories(id) ON DELETE CASCADE,
-      UNIQUE (repo_id, filepath)
+      CHECK (
+        (repo_id IS NOT NULL AND filepath IS NOT NULL AND share_token IS NULL) OR
+        (repo_id IS NULL AND filepath IS NULL AND share_token IS NOT NULL)
+      )
     )
   `;
   db.run(sql, (err) => {
