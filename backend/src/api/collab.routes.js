@@ -7,6 +7,8 @@ const fs = require('fs/promises');
 const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser');
 // Import our new serializer
 const { proseMirrorJSON_to_qmd } = require('../core/astSerializer');
+// Import the QMD parser to create blockMap
+const { parseQmd } = require('../core/qmdBlockParser');
 
 const router = express.Router();
 const REPOS_DIR = path.join(__dirname, '../../repos');
@@ -38,10 +40,14 @@ router.get('/:shareToken', async (req, res) => {
     // 3. Get the current commit hash for the collaboration branch
     const commitHash = await git.resolveRef({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
 
-    // 4. Render the document from that branch
+    // 4. Read the original QMD file to create the blockMap
     const fullFilepath = path.join(projectDir, linkInfo.filepath);
+    const qmdContent = await fs.readFile(fullFilepath, 'utf8');
+    const { blockMap } = parseQmd(qmdContent);
+
+    // 5. Render the document from that branch
     const { jatsXml } = await renderToJATS(fullFilepath, projectDir, linkInfo.repoId, commitHash);
-    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, linkInfo.repoId, commitHash, fullFilepath);
+    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, blockMap, linkInfo.repoId, commitHash, fullFilepath);
     
     res.json(proseMirrorJson);
 
@@ -72,14 +78,17 @@ router.post('/:shareToken', async (req, res) => {
         });
       });
   
-      // 2. Serialize the ProseMirror JSON back into a .qmd string
-      const newQmdContent = proseMirrorJSON_to_qmd(proseMirrorDoc);
-  
-      // 3. Write the new content to the file and commit it to the collaboration branch
+      // 2. Get the current QMD content for serialization
       const projectDir = path.join(REPOS_DIR, linkInfo.full_name);
       const fullFilepath = path.join(projectDir, linkInfo.filepath);
-  
+      
       await git.checkout({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
+      const originalQmdContent = await fs.readFile(fullFilepath, 'utf8');
+  
+      // 3. Serialize the ProseMirror JSON back into a .qmd string
+      const newQmdContent = proseMirrorJSON_to_qmd(proseMirrorDoc, originalQmdContent);
+  
+      // 4. Write the new content to the file and commit it to the collaboration branch
       await fs.writeFile(fullFilepath, newQmdContent);
       
       await git.add({ fs, dir: projectDir, filepath: linkInfo.filepath });

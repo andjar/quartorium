@@ -7,6 +7,7 @@ const fs = require('fs/promises');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser');
+const { parseQmd } = require('../core/qmdBlockParser');
 const Diff = require('diff');
 const { ensureAuthenticated } = require('../core/auth');
 
@@ -134,8 +135,12 @@ router.get('/view', async (req, res) => {
     // Render the document to JATS
     const { jatsXml, assetsCachePath } = await renderToJATS(fullFilepath, projectDir, effectiveRepoId, currentCommitHash);
     
+    // Read the original QMD file to create the blockMap
+    const qmdContent = await fs.readFile(fullFilepath, 'utf8');
+    const { blockMap } = parseQmd(qmdContent);
+    
     // Transform the JATS to ProseMirror JSON
-    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, effectiveRepoId, currentCommitHash, effectiveFilepath);
+    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, blockMap, effectiveRepoId, currentCommitHash, effectiveFilepath);
 
     // --- START CACHE WRITE LOGIC ---
     if (currentCommitHash && cacheFilename) { // Only attempt to write if cache setup was successful

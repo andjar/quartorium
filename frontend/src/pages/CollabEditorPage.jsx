@@ -34,19 +34,23 @@ function CollabEditorPage() {
 
   const editor = useEditor({
     extensions: [
-      StarterKit, // You can keep StarterKit
+      StarterKit.configure({
+        // Disable link extension from StarterKit since we're using our own
+        link: false,
+      }),
       Link.configure({
-        openOnClick: false, // Disable clicking on links
-        autolink: false,    // Disable automatic link creation
-        editable: false,    // Make links non-editable
-        // You might want to ensure that links from StarterKit are disabled if you add Link separately
-        // Or configure StarterKit: StarterKit.configure({ link: { /* options */ }})
+        openOnClick: false,
+        autolink: false,
+        editable: false,
       }),
       QuartoBlock,
       Citation,
       FigureReference
     ],
-    content: '',
+    content: {
+      type: 'doc',
+      content: []
+    },
     editable: true,
     onUpdate: ({ editor }) => {
       setStatus('Unsaved');
@@ -60,12 +64,21 @@ function CollabEditorPage() {
     fetch(`/api/collab/${shareToken}`)
       .then(res => res.ok ? res.json() : Promise.reject(res))
       .then(data => {
+        // The backend now returns ProseMirror JSON with block keys
+        // and includes metadata/bibliography blocks
         editor.commands.setContent(data);
         setStatus('Loaded');
       })
-      .catch(async () => {
+      .catch(async (err) => {
+        console.error('Failed to load document:', err);
         setError('This share link is invalid or has expired.');
-        editor.commands.setContent('<p style="color:red;">Could not load document.</p>');
+        editor.commands.setContent({
+          type: 'doc',
+          content: [{
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'Could not load document.' }]
+          }]
+        });
       });
   }, [editor, shareToken]);
 

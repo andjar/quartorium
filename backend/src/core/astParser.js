@@ -226,15 +226,102 @@ function parseFront(frontElement, context) {
 }
 
 /**
- * UPDATED: Transforms JATS body nodes, now creating <figureReference> nodes.
- * @param {NodeList} nodes - A list of DOM nodes (element.childNodes).
- * @param {string} repoId - The repository ID for asset path rewriting.
- * @param {object} context - The context object for resolving xrefs.
+ * Processes a figure element to extract rich rendering attributes.
+ * @param {Element} figEl - The figure DOM element.
+ * @param {string} repoId - The repository ID.
+ * @param {string} codeContent - The code content if this is a code block.
+ * @param {string} language - The programming language.
  * @param {string} commitHash - The commit hash.
  * @param {string} docFilepath - The path to the original document file.
- * @returns {Array} An array of ProseMirror nodes.
+ * @returns {object} Object with type and attrs containing the rich rendering attributes.
  */
-function transformBodyNodes(nodes, repoId, context, commitHash, docFilepath) {
+function processFig(figEl, repoId, codeContent, language, commitHash, docFilepath) {
+    const figId = figEl.id || '';
+    const captionEl = figEl.querySelector('caption');
+    const figCaption = cleanText(captionEl?.textContent) || '';
+    
+    // Extract figure label from caption or ID
+    const figLabel = figId || '';
+    
+    // Extract the image HTML from the figure element
+    let htmlOutput = '';
+    
+    // Debug: Log the figure element structure
+    console.log('Processing figure element:', figEl.outerHTML);
+    
+    // Try multiple ways to find image references
+    const graphicEl = figEl.querySelector('graphic');
+    const mediaEl = figEl.querySelector('media');
+    const inlineGraphicEl = figEl.querySelector('inline-graphic');
+    
+    // Try graphic element first
+    if (graphicEl) {
+        console.log('Found graphic element:', graphicEl.outerHTML);
+        const href = graphicEl.getAttribute('xlink:href') || graphicEl.getAttribute('href');
+        if (href) {
+            console.log('Found image href:', href);
+            // Construct the asset URL using the assets route
+            const assetUrl = `/api/assets/${repoId}/${commitHash}/${href}`;
+            htmlOutput = `<img src="${assetUrl}" alt="${figCaption}" style="max-width: 100%; height: auto;" />`;
+            console.log('Generated HTML output:', htmlOutput);
+        }
+    }
+    
+    // Try media element if no graphic found
+    if (!htmlOutput && mediaEl) {
+        console.log('Found media element:', mediaEl.outerHTML);
+        const href = mediaEl.getAttribute('xlink:href') || mediaEl.getAttribute('href');
+        if (href) {
+            console.log('Found media href:', href);
+            const assetUrl = `/api/assets/${repoId}/${commitHash}/${href}`;
+            htmlOutput = `<img src="${assetUrl}" alt="${figCaption}" style="max-width: 100%; height: auto;" />`;
+            console.log('Generated HTML output from media:', htmlOutput);
+        }
+    }
+    
+    // Try inline-graphic element if no other image found
+    if (!htmlOutput && inlineGraphicEl) {
+        console.log('Found inline-graphic element:', inlineGraphicEl.outerHTML);
+        const href = inlineGraphicEl.getAttribute('xlink:href') || inlineGraphicEl.getAttribute('href');
+        if (href) {
+            console.log('Found inline-graphic href:', href);
+            const assetUrl = `/api/assets/${repoId}/${commitHash}/${href}`;
+            htmlOutput = `<img src="${assetUrl}" alt="${figCaption}" style="max-width: 100%; height: auto;" />`;
+            console.log('Generated HTML output from inline-graphic:', htmlOutput);
+        }
+    }
+    
+    // If no graphic element found, try to extract any other HTML content
+    if (!htmlOutput) {
+        // Look for any other content that might be in the figure
+        const contentElements = figEl.querySelectorAll('*:not(caption)');
+        if (contentElements.length > 0) {
+            console.log('No graphic element found, but found other content elements:', contentElements.length);
+            // Convert the content to HTML string, but we'll need to handle this carefully
+            // For now, let's just extract text content as a fallback
+            htmlOutput = `<div>${cleanText(figEl.textContent)}</div>`;
+        }
+    }
+    
+    return {
+        type: 'quartoBlock',
+        attrs: {
+            figId: figId,
+            figCaption: figCaption,
+            figLabel: figLabel,
+            htmlOutput: htmlOutput,
+            code: codeContent || '',
+            language: language || 'text',
+            metadata: null
+        }
+    };
+}
+
+/**
+ * MODIFIED: Transforms JATS body nodes.
+ * It now accepts blockMap to add a 'blockKey'.
+ */
+function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFilepath) {
     const pmNodes = [];
 
     nodes.forEach(node => {
@@ -253,7 +340,7 @@ function transformBodyNodes(nodes, repoId, context, commitHash, docFilepath) {
                 case 'p':
                     pmNodes.push({
                         type: 'paragraph',
-                        content: transformBodyNodes(el.childNodes, repoId, context, commitHash, docFilepath)
+                        content: transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath)
                     });
                     break;
                 case 'xref':
@@ -265,9 +352,9 @@ function transformBodyNodes(nodes, repoId, context, commitHash, docFilepath) {
                             type: 'citation',
                             attrs: { rid: rid, label: cleanText(el.textContent) },
                         });
-                    } else if (context.figures[rid]) { // NEW: Check if the rid points to a known figure
+                    } else if (context.figures[rid]) {
                         pmNodes.push({
-                            type: 'figureReference', // Use our new node type
+                            type: 'figureReference',
                             attrs: {
                                 rid: rid,
                                 label: cleanText(el.textContent)
@@ -286,15 +373,26 @@ function transformBodyNodes(nodes, repoId, context, commitHash, docFilepath) {
                         const language = codeEl ? codeEl.getAttribute('language') : null;
                         
                         if (figEl) {
-                            pmNodes.push(processFig(figEl, repoId, code, language, commitHash, docFilepath));
+                            // 1. Get the perfectly constructed block from your original function
+                            const pmBlock = processFig(figEl, repoId, code, language, commitHash, docFilepath);
+                            
+                            // 2. ENHANCE it with the blockKey
+                            const blockKey = figEl.id; // The JATS fig id matches the QMD label
+                            if (blockMap.has(blockKey)) {
+                                pmBlock.attrs.blockKey = blockKey;
+                            }
+                            pmNodes.push(pmBlock);
+
                         } else if (code) {
+                            // Fallback for un-keyed or simple code blocks (this part is less critical)
                             pmNodes.push({
                                 type: 'code_block',
-                                attrs: { language: language },
-                                content: [{ type: 'text', text: code.replace(/\n$/, '') }]
+                                attrs: { language: codeEl.getAttribute('language') },
+                                content: [{ type: 'text', text: codeEl.textContent.replace(/\n$/, '') }]
                             });
                         }
                     } else {
+                        // Handle normal <sec> elements (headings, etc.)
                         const titleEl = el.querySelector(':scope > title');
                         if (titleEl) {
                             pmNodes.push({
@@ -304,11 +402,17 @@ function transformBodyNodes(nodes, repoId, context, commitHash, docFilepath) {
                             });
                             titleEl.remove();
                         }
-                        pmNodes.push(...transformBodyNodes(el.childNodes, repoId, context, commitHash, docFilepath));
+                        pmNodes.push(...transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath));
                     }
                     break;
                 case 'fig':
-                    pmNodes.push(processFig(el, repoId, '', null, commitHash, docFilepath));
+                    // This handles figures outside of notebook cells
+                    const pmBlock = processFig(el, repoId, '', null, commitHash, docFilepath);
+                    const blockKey = el.id;
+                    if (blockMap.has(blockKey)) {
+                        pmBlock.attrs.blockKey = blockKey;
+                    }
+                    pmNodes.push(pmBlock);
                     break;
             }
         }
@@ -318,130 +422,57 @@ function transformBodyNodes(nodes, repoId, context, commitHash, docFilepath) {
 }
 
 /**
- * @param {Element} figElement - The <fig> DOM element.
- * @param {string} repoId - The ID of the repository for asset rewriting.
- * @param {string} code - The source code associated with this figure.
- * @param {string|null} language - The language of the source code.
- * @param {string} commitHash - The commit hash.
- * @param {string} docFilepath - The path to the original document file.
- * @returns {object} A ProseMirror quartoBlock node.
+ * MODIFIED: The main transformation function.
+ * It now accepts blockMap as a new parameter.
  */
-function processFig(figElement, repoId, code, language, commitHash, docFilepath) {
-  const originalDocNameFiles = path.parse(docFilepath).name + '_files';
-  const captionEl = figElement.querySelector('caption');
-  let figLabel = '';
-  let figCaption = '';
-
-  if (captionEl) {
-      // JATS Best Practice: Check for an explicit <label> element first.
-      const labelEl = captionEl.querySelector('label');
-      if (labelEl) {
-          figLabel = cleanText(labelEl.textContent);
-          // To get the rest of the caption, we can clone the caption, remove the label, and get the text.
-          const captionClone = captionEl.cloneNode(true);
-          captionClone.querySelector('label').remove();
-          figCaption = cleanText(captionClone.textContent);
-      } else {
-          // Fallback for captions like <p>Figure 1: A simple plot</p>
-          const pText = cleanText(captionEl.querySelector('p')?.textContent || captionEl.textContent);
-          const labelRegex = /^(Figure|Table|Fig\.?)\s+[\w\d.-]+[:.]?\s*/i;
-          const match = pText.match(labelRegex);
-
-          if (match) {
-              figLabel = cleanText(match[0]);
-              figCaption = cleanText(pText.substring(match[0].length));
-          } else {
-              // If no recognizable label pattern, the whole thing is the caption.
-              figCaption = pText;
-          }
-      }
-  }
-
-  const graphicEl = figElement.querySelector('graphic');
-  const imageSrc = graphicEl?.getAttribute('xlink:href') || graphicEl?.getAttribute('href') || '';
-  // The imageSrc from JATS is already relative to the output directory root,
-  // so it includes the necessary '..._files' directory.
-  const rewrittenSrc = imageSrc ? `/api/assets/${repoId}/${commitHash}/${imageSrc}` : '';
-  // Use the full caption text for the alt attribute for accessibility.
-  const altText = `${figLabel} ${figCaption}`.trim();
-  const imageHtml = rewrittenSrc ? `<img src="${rewrittenSrc}" alt="${altText}" style="max-width: 100%; height: auto;" />` : '';
-
-  return {
-      type: 'quartoBlock',
-      attrs: {
-          htmlOutput: imageHtml,
-          code: code,
-          language: language,
-          figId: figElement.id || '',
-          figCaption: figCaption, // Just the caption text
-          figLabel: figLabel,     // Just the label text
-      }
-  };
-}
-
-/**
- * Transforms a JATS XML string into a ProseMirror JSON document using JSDOM.
- * @param {string} jatsXml - The JATS XML content.
- * @param {string} repoId - The repository ID for asset path rewriting.
- * @param {string} commitHash - The commit hash.
- * @param {string} docFilepath - The path to the original document file.
- * @returns {Promise<object>} The ProseMirror JSON document.
- */
-async function jatsToProseMirrorJSON(jatsXml, repoId, commitHash, docFilepath) {
+async function jatsToProseMirrorJSON(jatsXml, blockMap, repoId, commitHash, docFilepath) {
     try {
-        // 1. Parse the XML string into a DOM.
-        // The contentType is crucial for parsing XML correctly, not as HTML.
         const dom = new JSDOM(jatsXml, { contentType: "application/xml" });
         const { document } = dom.window;
-
-        // 2. Build the context map for all referenceable IDs
         const context = buildContext(document);
-
-        // 3. Find the correct article content to parse (prefer sub-article)
         const subArticle = document.querySelector('sub-article');
         const articleToParse = subArticle || document.querySelector('article');
-        if (!articleToParse) throw new Error("Could not find <article> or <sub-article> element.");
-
-        // 4. Parse Metadata from <front> or <front-stub>
         const frontEl = articleToParse.querySelector('front, front-stub');
         const metadata = frontEl ? parseFront(frontEl, context) : {};
-
-        // 5. Parse Body Content
-        const bodyEl = articleToParse.querySelector('body');
-        if (!bodyEl) throw new Error("Could not find <body> in the selected article content.");
-        const content = transformBodyNodes(bodyEl.childNodes, repoId, context, commitHash, docFilepath);
         
-        // Create and prepend a metadata block if metadata is available
+        // Pass blockMap to the body transformer
+        const bodyEl = articleToParse.querySelector('body');
+        const content = transformBodyNodes(bodyEl.childNodes, blockMap, repoId, context, commitHash, docFilepath);
+        
         const finalContent = [];
+        
+        // MODIFICATION: Create the metadata block AND add the key
         if (metadata && Object.keys(metadata).length > 0 && (metadata.title || metadata.authors?.length > 0)) {
             finalContent.push({
                 type: 'quartoBlock',
                 attrs: {
+                    // Your original attributes for rendering
                     metadata: metadata,
-                    // Set other attributes to default/null values
                     htmlOutput: '',
                     code: '',
                     language: 'metadata',
                     figId: '',
                     figCaption: '',
-                    figLabel: ''
+                    figLabel: '',
+                    // The new key for serialization
+                    blockKey: '__YAML_BLOCK__'
                 }
             });
         }
         finalContent.push(...content);
 
-        // Create and append a bibliography block if references exist
+        // The bibliography block is fine as-is, it's just data.
         const bibliography = context.references;
         if (bibliography && Object.keys(bibliography).length > 0) {
             finalContent.push({
                 type: 'quartoBlock',
                 attrs: {
                     bibliography: bibliography,
-                    // Set other attributes to default/null values
+                    language: 'bibliography',
+                    // ... other attrs null/empty ...
                     metadata: null,
                     htmlOutput: '',
                     code: '',
-                    language: 'bibliography',
                     figId: '',
                     figCaption: '',
                     figLabel: ''
@@ -449,7 +480,6 @@ async function jatsToProseMirrorJSON(jatsXml, repoId, commitHash, docFilepath) {
             });
         }
 
-        // 6. Assemble the final ProseMirror document
         return {
             type: 'doc',
             attrs: {

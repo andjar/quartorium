@@ -136,7 +136,7 @@ const QuartoBlockNodeView = ({ node }) => {
               <figure id={figId}>
                 <div dangerouslySetInnerHTML={{ __html: htmlOutput }} />
                 <figcaption>
-                  <strong>{figLabel}</strong> {figCaption}
+                  {figCaption}
                 </figcaption>
               </figure>
             ) : (
