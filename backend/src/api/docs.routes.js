@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const { v4: actualUuidv4 } = require('uuid');
 // const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser'); // No longer needed for view
 // const { parseQmd } = require('../core/qmdBlockParser'); // No longer needed for view
-const { qmdToProseMirror } = require('../../core/quartoParser'); // Import new parser
+const { qmdToProseMirror } = require('../core/quartoParser'); // Import new parser
 const Diff = require('diff');
 const { ensureAuthenticated } = require('../core/auth');
 

@@ -31,7 +31,7 @@ async function qmdToProseMirror(qmdString) {
     } else {
       // This is a standard Markdown node (paragraph, heading, etc.)
       // This is where we need to handle spans for comments.
-      else if (node.type === 'heading') {
+      if (node.type === 'heading') {
         const textContent = node.children?.map(c => c.value).join('') || '';
         proseMirrorNodes.push({
           type: 'heading',

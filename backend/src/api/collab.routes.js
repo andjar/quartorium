@@ -249,9 +249,7 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
     const currentOriginalQmdContent = originalQmdContent || '';
     const { data: yamlObject } = matter(currentOriginalQmdContent);
 
-    // Create a YAML string. If yamlObject is empty, matter.stringify returns '---
-{}\n---
-' or similar.
+    // Create a YAML string. If yamlObject is empty, matter.stringify returns '---\n{}\n---' or similar.
     // We want an empty string if no actual YAML, or just '--- \n ---' for empty frontmatter
     let yamlString = '';
     if (Object.keys(yamlObject).length > 0) {

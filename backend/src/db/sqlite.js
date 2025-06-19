@@ -106,6 +106,7 @@ const createLiveDocumentsTable = () => {
       share_token TEXT UNIQUE,
       prosemirror_json TEXT NOT NULL,
       base_commit_hash TEXT NOT NULL,
+      comments_json TEXT DEFAULT '[]',
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (repo_id) REFERENCES repositories(id) ON DELETE CASCADE,
       CHECK (
@@ -133,6 +134,25 @@ const createLiveDocumentsTable = () => {
           console.error('Error creating trigger for live_documents:', triggerErr.message);
         } else {
           console.log('✅ Trigger for live_documents is ready.');
+        }
+      });
+      
+      // Add comments_json column to existing table if it doesn't exist
+      db.all("PRAGMA table_info(live_documents)", (err, rows) => {
+        if (err) {
+          console.error('Error checking table schema:', err.message);
+          return;
+        }
+        
+        const hasCommentsJson = rows.some(row => row.name === 'comments_json');
+        if (!hasCommentsJson) {
+          db.run("ALTER TABLE live_documents ADD COLUMN comments_json TEXT DEFAULT '[]'", (alterErr) => {
+            if (alterErr) {
+              console.error('Error adding comments_json column:', alterErr.message);
+            } else {
+              console.log('✅ Added comments_json column to live_documents table.');
+            }
+          });
         }
       });
     }
