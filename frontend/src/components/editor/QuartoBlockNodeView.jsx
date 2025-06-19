@@ -2,9 +2,39 @@ import React, { useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import './QuartoBlockNodeView.css';
 
+// Helper to format a single author
+const formatAuthor = (author) => {
+  if (author.name) return author.name; // For metadata authors
+  if (author.given && author.surname) return `${author.surname}, ${author.given}`;
+  return 'Unknown Author';
+};
+
+// Helper to format a single reference
+const formatReference = (ref) => {
+  const authorNames = ref.authors.map(formatAuthor).join('; ');
+  let text = `${authorNames} (${ref.year || 'n.d.'}). ${ref.title}.`;
+  if (ref.source) {
+    text += ` *${ref.source}*`;
+  }
+  if (ref.volume) {
+    text += `, ${ref.volume}`;
+  }
+  if (ref.issue) {
+    text += `(${ref.issue})`;
+  }
+  if (ref.fpage) {
+    text += `, ${ref.fpage}`;
+    if (ref.lpage) {
+      text += `-${ref.lpage}`;
+    }
+  }
+  text += '.';
+  return text;
+};
+
 const QuartoBlockNodeView = ({ node }) => {
-  // Destructure all potential attributes, including the new 'metadata'
-  const { code, language, htmlOutput, figId, figCaption, figLabel, metadata } = node.attrs;
+  // Destructure all potential attributes
+  const { code, language, htmlOutput, figId, figCaption, figLabel, metadata, bibliography } = node.attrs;
   const [isCodeVisible, setIsCodeVisible] = useState(false);
 
   // If metadata is present, render the metadata view.
@@ -22,7 +52,7 @@ const QuartoBlockNodeView = ({ node }) => {
               <div className="authors">
                 {authors.map((author, index) => (
                   <div key={index} className="author">
-                    <span className="author-name">{author.name}</span>
+                    <span className="author-name">{formatAuthor(author)}</span>
                     {author.isCorresponding && <sup title="Corresponding Author">*</sup>}
                     {author.affiliations && author.affiliations.length > 0 && (
                        <span className="author-affiliations">
@@ -33,6 +63,38 @@ const QuartoBlockNodeView = ({ node }) => {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      </NodeViewWrapper>
+    );
+  }
+
+  // If bibliography is present, render the bibliography view.
+  if (bibliography) {
+    // Convert the bibliography object to an array and remove duplicates
+    const uniqueRefs = Object.values(bibliography).reduce((acc, current) => {
+      if (!acc.find(item => item.id === current.id)) {
+        acc.push(current);
+      }
+      return acc;
+    }, []);
+
+    return (
+      <NodeViewWrapper className="quarto-block-wrapper bibliography-block">
+        <div className="quarto-block">
+          <div className="quarto-block-header">
+            <span>{`{bibliography}`}</span>
+          </div>
+          <div className="quarto-block-output">
+            <h2>References</h2>
+            <ul>
+              {uniqueRefs.map(ref => (
+                <li key={ref.id}>
+                  {formatReference(ref)}
+                  {ref.doi && <a href={`https://doi.org/${ref.doi}`} target="_blank" rel="noopener noreferrer"> DOI: {ref.doi}</a>}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </NodeViewWrapper>

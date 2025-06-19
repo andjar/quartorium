@@ -430,6 +430,25 @@ async function jatsToProseMirrorJSON(jatsXml, repoId, commitHash, docFilepath) {
         }
         finalContent.push(...content);
 
+        // Create and append a bibliography block if references exist
+        const bibliography = context.references;
+        if (bibliography && Object.keys(bibliography).length > 0) {
+            finalContent.push({
+                type: 'quartoBlock',
+                attrs: {
+                    bibliography: bibliography,
+                    // Set other attributes to default/null values
+                    metadata: null,
+                    htmlOutput: '',
+                    code: '',
+                    language: 'bibliography',
+                    figId: '',
+                    figCaption: '',
+                    figLabel: ''
+                }
+            });
+        }
+
         // 6. Assemble the final ProseMirror document
         return {
             type: 'doc',

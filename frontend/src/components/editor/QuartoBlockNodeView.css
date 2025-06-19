@@ -115,3 +115,43 @@
   font-size: 0.9rem;
   cursor: help;
 }
+
+/* Styles for the new Bibliography Block */
+.bibliography-block .quarto-block-output {
+  padding: 1rem 1.5rem;
+  background-color: #fdfdfd;
+}
+
+.bibliography-block h2 {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin-top: 0;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 0.5rem;
+}
+
+.bibliography-block ul {
+  list-style-type: none;
+  padding-left: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.bibliography-block li {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #333;
+}
+
+.bibliography-block li a {
+  color: #2980b9;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.bibliography-block li a:hover {
+  text-decoration: underline;
+}

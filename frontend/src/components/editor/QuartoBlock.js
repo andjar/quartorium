@@ -16,6 +16,7 @@ export default Node.create({
       figCaption: { default: '' },
       figLabel: { default: '' },
       metadata: { default: null },
+      bibliography: { default: null },
     };
   },
 
