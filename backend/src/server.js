@@ -67,7 +67,7 @@ app.post('/api/auth/logout', (req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Quillarto backend listening on http://localhost:${PORT}`);
+  console.log(`🚀 Quartorium backend listening on http://localhost:${PORT}`);
 });
 
 // --- API Routes ---
