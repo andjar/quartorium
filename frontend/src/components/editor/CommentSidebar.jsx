@@ -153,8 +153,9 @@ function CommentSidebar({ comments, setComments, activeCommentId, onCommentSelec
                   <textarea
                     ref={(el) => textareaRefs.current[comment.id] = el}
                     placeholder="Write your comment here..."
-                    onKeyPress={(e) => {
+                    onKeyDown={(e) => {
                       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
                         submitInitialComment(comment.id, e.target.value);
                       }
                     }}
