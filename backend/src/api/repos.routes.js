@@ -158,25 +158,16 @@ router.get('/:repoId/branches', async (req, res) => {
         onAuth: () => ({ username: req.user.github_token }),
       });
 
-      // Fetch all branches from remote
-      await git.fetch({
-        fs,
-        http,
-        dir: projectDir,
-        onAuth: () => ({ username: req.user.github_token }),
-      });
-
-      // List all branches (both local and remote)
+      // List all local branches only
       const branches = await git.listBranches({
         fs,
-        dir: projectDir,
-        remote: 'origin'
+        dir: projectDir
       });
 
       // Format branches for frontend consumption
       const formattedBranches = branches.map(branchName => ({
         id: branchName, // Use branch name as ID for simplicity
-        name: branchName.replace('origin/', '') // Remove 'origin/' prefix for cleaner display
+        name: branchName // Keep original name for local branches
       }));
 
       res.json(formattedBranches);

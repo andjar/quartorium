@@ -37,8 +37,8 @@ export default Node.create({
 
   // How to render this node to HTML
   renderHTML({ HTMLAttributes, node }) {
-    // We render the label text inside the span
-    return ['span', mergeAttributes(HTMLAttributes, { 'data-type': 'citation' }), node.attrs.label];
+    // We render the label text inside the span with parentheses
+    return ['span', mergeAttributes(HTMLAttributes, { 'data-type': 'citation' }), `(${node.attrs.label})`];
   },
 
   // Make it so you can't type inside the citation

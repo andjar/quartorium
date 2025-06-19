@@ -1,4 +1,4 @@
-import { proseMirrorToQmd } from './quartoSerializer.js';
+const { proseMirrorToQmd } = require('./quartoSerializer.js');
 
 function runQuartoSerializerTests() {
   console.log("Running quartoSerializer.js tests...\n");

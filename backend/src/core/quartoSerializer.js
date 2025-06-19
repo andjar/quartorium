@@ -6,7 +6,7 @@
  * @param {string} yamlString - The YAML frontmatter string.
  * @returns {string} The generated QMD string.
  */
-export function proseMirrorToQmd(prosemirrorJson, commentsArray, yamlString) {
+function proseMirrorToQmd(prosemirrorJson, commentsArray, yamlString) {
   let qmdString = '';
 
   // 1. YAML Frontmatter
@@ -73,3 +73,5 @@ export function proseMirrorToQmd(prosemirrorJson, commentsArray, yamlString) {
 
   return qmdString.trim() + '\n'; // Ensure a final newline
 }
+
+module.exports = { proseMirrorToQmd };

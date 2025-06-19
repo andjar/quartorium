@@ -4,7 +4,7 @@
  * @param {string} qmdString - The QMD string.
  * @returns {{comments: Array<Object>, remainingQmdString: string}} - An object containing the parsed comments and the QMD string without the appendix.
  */
-export function extractCommentsAppendix(qmdString) {
+function extractCommentsAppendix(qmdString) {
   const appendixRegex = /<!-- Comments Appendix -->\s*<div id="quartorium-comments" style="display:none;">\s*```json\s*([\s\S]*?)\s*```\s*<\/div>/s;
   const match = qmdString.match(appendixRegex);
 
@@ -29,3 +29,5 @@ export function extractCommentsAppendix(qmdString) {
 
   return { comments, remainingQmdString };
 }
+
+module.exports = { extractCommentsAppendix };

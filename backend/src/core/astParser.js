@@ -369,7 +369,18 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
         if (node.nodeType === 3) { // Text Node
             const text = node.textContent;
             if (text.trim()) {
-                pmNodes.push({ type: 'text', text: text.replace(/\s+/g, ' ') });
+                // Clean up extra parentheses and brackets that JATS might add around citations
+                let cleanedText = text.replace(/\s+/g, ' ');
+                
+                // Remove extra parentheses around citations: (( -> empty, )) -> empty
+                cleanedText = cleanedText.replace(/\(+/g, '').replace(/\)+/g, '');
+                
+                // Remove extra brackets around citations: [[ -> [, ]] -> ]
+                cleanedText = cleanedText.replace(/\[+/g, '[').replace(/\]+/g, ']');
+                
+                if (cleanedText.trim()) {
+                    pmNodes.push({ type: 'text', text: cleanedText });
+                }
             }
         }
 
@@ -387,27 +398,78 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                 case 'xref':
                     const refType = el.getAttribute('ref-type');
                     const rid = el.getAttribute('rid');
+                    const textContent = cleanText(el.textContent);
+                    const outerHTML = el.outerHTML;
                     
-                    console.log(`Processing xref: ref-type="${refType}", rid="${rid}"`);
+                    console.log(`Processing xref: ref-type="${refType}", rid="${rid}", textContent="${textContent}"`);
+                    console.log(`XRef outerHTML: ${outerHTML}`);
                     
-                    if (refType === 'bibr' && context.references[rid]) {
+                    if (refType === 'bibr') {
                         console.log(`Found bibliography reference: ${rid}`);
+                        // For citations, use the display text but keep the original key for reference
+                        let citationKey = textContent;
+                        
+                        // Remove any extra parentheses or brackets that JATS might have added
+                        citationKey = citationKey.replace(/^\(+\[?/, '').replace(/\]?\)+$/, '');
+                        
+                        console.log(`Cleaned citation key: "${citationKey}" from "${textContent}"`);
+                        
+                        // Extract the original citation key from the rid for internal reference
+                        const extractedKey = rid.replace(/^ref-/, '').replace(/-nb-article$/, '');
+                        console.log(`Extracted key from rid: ${extractedKey}`);
+                        
+                        // Use the display text for the label, but store the original key in attrs
+                        console.log(`Using display text for citation: ${citationKey}`);
                         pmNodes.push({
                             type: 'citation',
-                            attrs: { rid: rid, label: cleanText(el.textContent) },
+                            attrs: { 
+                                rid: rid, 
+                                label: citationKey,  // Display text
+                                originalKey: extractedKey  // Original key for serialization
+                            },
                         });
-                    } else if (refType === 'fig' && context.figures[rid]) {
+                    } else if (refType === 'fig') {
                         console.log(`Found figure reference: ${rid}`);
+                        // For figure references, use the display text but keep the original key for reference
+                        let figLabel = textContent;
+                        
+                        // Remove any extra formatting that JATS might have added
+                        figLabel = figLabel.replace(/^@?\{?/, '').replace(/\}?$/, '');
+                        
+                        console.log(`Cleaned figure label: "${figLabel}" from "${textContent}"`);
+                        
+                        // Extract the original figure key from the rid for internal reference
+                        const extractedKey = rid.replace(/^fig-/, '').replace(/-nb-article$/, '');
+                        console.log(`Extracted figure key from rid: ${extractedKey}`);
+                        
+                        // Use the display text for the label, but store the original key in attrs
+                        console.log(`Using display text for figure reference: ${figLabel}`);
                         pmNodes.push({
                             type: 'figureReference',
-                            attrs: {
-                                rid: rid,
-                                label: cleanText(el.textContent)
-                            }
+                            attrs: { 
+                                rid: rid, 
+                                label: figLabel,  // Display text
+                                originalKey: extractedKey  // Original key for serialization
+                            },
+                        });
+                    } else if ((refType === 'null' || refType === null || !refType) && rid && rid.startsWith('fig-')) {
+                        // Handle figure references that don't have a proper ref-type
+                        console.log(`Found figure reference with null/undefined ref-type: ${rid}`);
+                        const extractedKey = rid.replace(/-nb-article$/, '');
+                        console.log(`Using extracted figure key: ${extractedKey}`);
+                        pmNodes.push({
+                            type: 'figureReference',
+                            attrs: { 
+                                rid: rid, 
+                                label: textContent,  // Display text
+                                originalKey: extractedKey  // Original key for serialization
+                            },
                         });
                     } else {
                         // Try to handle other reference types
                         console.log(`Unhandled xref type: ${refType}, rid: ${rid}`);
+                        console.log(`refType === 'null': ${refType === 'null'}, rid.startsWith('fig-'): ${rid && rid.startsWith('fig-')}`);
+                        
                         if (rid && (rid.startsWith('ref-') || rid.startsWith('fig-'))) {
                             // Try to extract the key from the rid
                             const key = rid.replace(/^ref-/, '').replace(/^fig-/, '').replace(/-nb-article$/, '');
@@ -418,7 +480,7 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                                 });
                             } else if (rid.startsWith('fig-')) {
                                 // For figure references, try to get the proper label
-                                let label = cleanText(el.textContent);
+                                let label = textContent;
                                 // If the text content is empty or generic, try the alt attribute
                                 if (!label || label === 'plot' || label === 'fig') {
                                     const alt = el.getAttribute('alt');
@@ -437,7 +499,7 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                             }
                         } else {
                             // Fallback for other unhandled xrefs
-                            pmNodes.push({ type: 'text', text: cleanText(el.textContent) });
+                            pmNodes.push({ type: 'text', text: textContent });
                         }
                     }
                     break;

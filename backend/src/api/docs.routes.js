@@ -227,8 +227,28 @@ function shareRouteLogic(db, git, uuidGenerator, projectBaseDir, fsForGit) {
         // If an existing branchName is provided, this might throw an error if not handled.
         // A more robust solution would check if branchName is "new" or "existing" from frontend,
         // or try to fetch the branch first.
-        await git.branch({ fs: fsForGit, dir: projectDir, ref: collab_branch_name, checkout: false });
-        console.log(`Branch ${collab_branch_name} created or already existed (if git.branch allows that).`);
+        
+        // Check if branch already exists locally
+        const existingBranches = await git.listBranches({
+          fs: fsForGit,
+          dir: projectDir
+        });
+        
+        const branchExists = existingBranches.includes(collab_branch_name);
+        
+        if (!branchExists) {
+          // Create new branch from main branch
+          await git.branch({ 
+            fs: fsForGit, 
+            dir: projectDir, 
+            ref: collab_branch_name, 
+            checkout: false 
+          });
+          
+          console.log(`Branch ${collab_branch_name} created locally for repo ${repo.full_name}`);
+        } else {
+          console.log(`Branch ${collab_branch_name} already exists locally for repo ${repo.full_name}`);
+        }
       } catch (branchError) {
         // If the error is because the branch already exists, we can ignore it if that's the desired behavior
         // for selecting an existing branch. Otherwise, this is a legitimate error.

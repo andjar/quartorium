@@ -80,7 +80,7 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
         setNewBranchName(''); // Reset new branch name input
         // Refresh the list of links
         fetch(`/api/docs/${docId}/shares`, { credentials: 'include' }).then(res => res.json()).then(setExistingLinks);
-        // Potentially refresh branches if a new one was created, though the current placeholder won't show it
+        // Always refresh branches to ensure dropdown is current
         fetchCollaborationBranches(repoId);
     })
     .catch(async (res) => {

@@ -2,13 +2,17 @@ const express = require('express');
 const db = require('../db/sqlite');
 const path = require('path');
 const git = require('isomorphic-git'); // Re-add for GET endpoint
+const http = require('isomorphic-git/http/node'); // Add http for git operations
 const fs = require('fs/promises');
+const fsForGit = require('fs'); // Add synchronous fs for isomorphic-git
 const matter = require('gray-matter'); // For YAML extraction
 const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser'); // Keep for GET, might remove if GET switches path
 // const { proseMirrorJSON_to_qmd } = require('../core/astSerializer'); // Replaced by new serializer
 const { proseMirrorJSON_to_qmd } = require('../core/astSerializer'); // Use improved serializer
 // Import the QMD parser to create blockMap - still needed for GET /:shareToken if rendering from branch
 const { parseQmd } = require('../core/qmdBlockParser');
+// Import comment utilities to extract comments from QMD
+const { extractCommentsAppendix } = require('../core/commentUtils');
 
 const router = express.Router();
 const REPOS_DIR = path.join(__dirname, '../../repos');
@@ -21,7 +25,7 @@ router.get('/:shareToken', async (req, res) => {
     // 1. First, get the share link information (needed for both live doc and branch rendering)
     const linkInfo = await new Promise((resolve, reject) => {
       const sql = `
-        SELECT s.*, d.filepath, r.id as repoId, r.full_name, s.collaborator_label 
+        SELECT s.*, d.filepath, r.id as repoId, r.full_name, s.collaborator_label
         FROM share_links s 
         JOIN documents d ON s.doc_id = d.id 
         JOIN repositories r ON d.repo_id = r.id 
@@ -77,36 +81,64 @@ router.get('/:shareToken', async (req, res) => {
     
     // Check out the specific collaboration branch
     const projectDir = path.join(REPOS_DIR, linkInfo.full_name);
-    await git.checkout({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
+    
+    // Try to checkout the branch - handle local branch references
+    try {
+      await git.checkout({ fs: fsForGit, dir: projectDir, ref: linkInfo.collab_branch_name });
+    } catch (checkoutError) {
+      // If local branch doesn't exist, create it from the main branch
+      if (checkoutError.message.includes('Could not find')) {
+        console.log(`Branch ${linkInfo.collab_branch_name} not found locally, creating from main branch`);
+        await git.branch({
+          fs: fsForGit,
+          dir: projectDir,
+          ref: linkInfo.collab_branch_name,
+          checkout: true
+        });
+      } else {
+        throw checkoutError;
+      }
+    }
 
     // Get the current commit hash for the collaboration branch
-    const commitHash = await git.resolveRef({ fs, dir: projectDir, ref: linkInfo.collab_branch_name });
+    const commitHash = await git.resolveRef({ fs: fsForGit, dir: projectDir, ref: linkInfo.collab_branch_name });
 
     // Read the original QMD file to create the blockMap
     const fullFilepath = path.join(projectDir, linkInfo.filepath);
     const qmdContent = await fs.readFile(fullFilepath, 'utf8');
-    const { blockMap } = parseQmd(qmdContent);
-
-    // Render the document from that branch
-    // NOTE: This path (rendering from branch) currently uses the JATS pipeline,
-    // which doesn't inherently know about comments in the format this subtask is implementing.
-    // For consistency, if this route is used, it should ideally also use qmdToProseMirror
-    // which extracts comments from the QMD appendix if they were committed.
-    // However, the subtask focuses on live save/load and commit serialization.
-    // So, for now, this part will return empty comments if it falls through to here.
-    const { jatsXml } = await renderToJATS(fullFilepath, projectDir, linkInfo.repoId, commitHash);
-    const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, blockMap, linkInfo.repoId, commitHash, fullFilepath);
     
-    // When rendering from branch, comments would need to be parsed from the QMD file itself
-    // using the logic from `extractCommentsAppendix` if we were to use the remark path here.
-    // Since we are using JATS path here, we'll return empty comments.
-    // Or, if the /api/docs/view endpoint is the primary one for viewing, it would handle this.
-    res.json({ 
-      prosemirrorJson: proseMirrorJson, 
-      comments: [], 
-      currentCommitHash: commitHash,
-      collaboratorLabel: linkInfo.collaborator_label || null // Include collaborator label
-    });
+    console.log(`Processing QMD file: ${linkInfo.filepath}`);
+    console.log(`Original QMD content length: ${qmdContent.length} characters`);
+    
+    // Extract comments from the QMD content before rendering
+    const { comments: extractedComments, remainingQmdString: qmdWithoutComments } = extractCommentsAppendix(qmdContent);
+    
+    console.log(`Extracted ${extractedComments.length} comments from QMD`);
+    console.log(`QMD content without comments length: ${qmdWithoutComments.length} characters`);
+    
+    // Create blockMap from the QMD content without comments
+    const { blockMap } = parseQmd(qmdWithoutComments);
+
+    // Render the document from that branch using the QMD content without comments
+    // Temporarily replace the file content with the version without comments for rendering
+    // so that the JATS rendering process can find the expected output file
+    const originalContent = qmdContent; // We already have the original content
+    await fs.writeFile(fullFilepath, qmdWithoutComments);
+    
+    try {
+      const { jatsXml } = await renderToJATS(fullFilepath, projectDir, linkInfo.repoId, commitHash);
+      const proseMirrorJson = await jatsToProseMirrorJSON(jatsXml, blockMap, linkInfo.repoId, commitHash, fullFilepath);
+      
+      res.json({ 
+        prosemirrorJson: proseMirrorJson, 
+        comments: extractedComments, // Return the extracted comments
+        currentCommitHash: commitHash,
+        collaboratorLabel: linkInfo.collaborator_label || null // Include collaborator label
+      });
+    } finally {
+      // Restore the original content
+      await fs.writeFile(fullFilepath, originalContent);
+    }
 
   } catch (error) {
     console.error('Error loading collab doc:', error);
@@ -253,14 +285,30 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
 
 
     // 3. Checkout collab branch
-    await git.checkout({ fs, dir: projectDir, ref: collabBranchName });
+    // Try to checkout the branch - handle local branch references
+    try {
+      await git.checkout({ fs: fsForGit, dir: projectDir, ref: collabBranchName });
+    } catch (checkoutError) {
+      // If local branch doesn't exist, create it from the main branch
+      if (checkoutError.message.includes('Could not find')) {
+        console.log(`Branch ${collabBranchName} not found locally, creating from main branch`);
+        await git.branch({
+          fs: fsForGit,
+          dir: projectDir,
+          ref: collabBranchName,
+          checkout: true
+        });
+      } else {
+        throw checkoutError;
+      }
+    }
     console.log(`Checked out ${collabBranchName} for repo ${linkAndUserInfo.full_name}`);
 
     // 4. Fetch original QMD content from base_commit_hash on the collab branch
     let originalQmdContent;
     try {
       const relativeFilepath = path.relative(projectDir, path.join(projectDir, collabFilepath)); // Ensure filepath is relative for readBlob
-      const blobData = await git.readBlob({ fs, dir: projectDir, oid: base_commit_hash, filepath: relativeFilepath });
+      const blobData = await git.readBlob({ fs: fsForGit, dir: projectDir, oid: base_commit_hash, filepath: relativeFilepath });
       originalQmdContent = Buffer.from(blobData.blob).toString('utf8');
     } catch (e) {
         console.warn(`Failed to read blob for ${collabFilepath} at ${base_commit_hash} on branch ${collabBranchName}: ${e.message}. Assuming new file or attempting HEAD.`);
@@ -306,10 +354,10 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
     // 6. Write and commit to collab branch
     const fullCollabFilepath = path.join(projectDir, collabFilepath);
     await fs.writeFile(fullCollabFilepath, newQmdContent);
-    await git.add({ fs, dir: projectDir, filepath: collabFilepath }); // filepath relative to repo root
+    await git.add({ fs: fsForGit, dir: projectDir, filepath: collabFilepath }); // filepath relative to repo root
 
     const newCommitHash = await git.commit({
-      fs,
+      fs: fsForGit,
       dir: projectDir,
       message: `Quartorium Collab: Update ${collabFilepath} by ${authorName}`, // Added author name to message
       author: { name: authorName, email: authorEmail }, // Use fetched user details
@@ -337,6 +385,5 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
     res.status(500).json({ error: `Failed to commit to collaboration branch: ${error.message}` });
   }
 });
-
 
 module.exports = router;

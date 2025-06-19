@@ -1,4 +1,4 @@
-import { extractCommentsAppendix } from './commentUtils.js';
+const { extractCommentsAppendix } = require('./commentUtils.js');
 
 function runCommentUtilsTests() {
   console.log("Running commentUtils.js tests...\n");

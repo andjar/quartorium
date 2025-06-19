@@ -77,8 +77,15 @@ function serializeInlines(inlines, { citeMap, figMap }) {
       case 'citation': {
         const rid = inlineNode.attrs.rid;
         const label = inlineNode.attrs.label;
+        const originalKey = inlineNode.attrs.originalKey;
         
-        console.log(`Serializing citation: rid="${rid}", label="${label}"`);
+        console.log(`Serializing citation: rid="${rid}", label="${label}", originalKey="${originalKey}"`);
+        
+        // Use originalKey if available, otherwise fall back to other methods
+        if (originalKey) {
+          console.log(`Using originalKey for citation: ${originalKey}`);
+          return `[@${originalKey}]`;
+        }
         
         // Try to get the citation key from the map
         const bibKey = citeMap.get(rid);
@@ -114,14 +121,21 @@ function serializeInlines(inlines, { citeMap, figMap }) {
       case 'figureReference': {
         const rid = inlineNode.attrs.rid;
         const label = inlineNode.attrs.label;
+        const originalKey = inlineNode.attrs.originalKey;
         
-        console.log(`Serializing figure reference: rid="${rid}", label="${label}"`);
+        console.log(`Serializing figure reference: rid="${rid}", label="${label}", originalKey="${originalKey}"`);
+        
+        // Use originalKey if available, otherwise fall back to other methods
+        if (originalKey) {
+          console.log(`Using originalKey for figure reference: ${originalKey}`);
+          return `@${originalKey}`;
+        }
         
         // Try to get the figure key from the map
         const figLabel = figMap.get(rid);
         if (figLabel) {
           console.log(`Using mapped figure label: ${figLabel}`);
-          return `@{${figLabel}}`;
+          return `@${figLabel}`;
         }
         
         // Fallback: try to extract from the label or rid
@@ -129,17 +143,17 @@ function serializeInlines(inlines, { citeMap, figMap }) {
           // If label looks like a figure reference, use it
           if (/^fig-/.test(label)) {
             console.log(`Using label as figure reference: ${label}`);
-            return `@{${label}}`;
+            return `@${label}`;
           }
           // If label is "Figure 1" or similar, try to extract the key from rid
           if (rid && rid.startsWith('fig-')) {
             const extractedKey = rid.replace(/-nb-article$/, '');
             console.log(`Extracted figure key from rid: ${extractedKey}`);
-            return `@{${extractedKey}}`;
+            return `@${extractedKey}`;
           }
           // Otherwise, use the label as is (this might be wrong, but it's a fallback)
           console.log(`Using label as-is: ${label}`);
-          return `@{${label}}`;
+          return `@${label}`;
         }
         
         // Last resort: try to extract from rid
@@ -147,7 +161,7 @@ function serializeInlines(inlines, { citeMap, figMap }) {
           const extractedKey = rid.replace(/-nb-article$/, '');
           if (extractedKey && extractedKey !== rid) {
             console.log(`Last resort: extracted key from rid: ${extractedKey}`);
-            return `@{${extractedKey}}`;
+            return `@${extractedKey}`;
           }
         }
         
