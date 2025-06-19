@@ -255,37 +255,64 @@ function CollabEditorPage() {
       });
   }, [editor, shareToken]);
 
-  const addComment = () => {
+  const addComment = (commentText) => {
     if (!editor || !editor.state.selection.from || editor.state.selection.empty) {
       alert('Please select text to comment on.');
       return;
     }
 
-    const commentText = prompt('Enter your comment:'); // Keep prompt for now
-    if (commentText) {
-      const newCommentId = `c-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-      const newComment = {
-        id: newCommentId,
-        author: collaboratorLabel || currentUser.id, // Use collaboratorLabel if available
-        timestamp: new Date().toISOString(),
-        status: "open",
-        thread: [
-          {
-            text: commentText,
-            author: collaboratorLabel || currentUser.id, // Use collaboratorLabel if available
-            timestamp: new Date().toISOString()
-          }
-        ]
-      };
-      console.log('Adding new comment:', newComment);
-      setComments(prevComments => {
-        const updatedComments = [...prevComments, newComment];
-        console.log('Updated comments state:', updatedComments);
-        return updatedComments;
-      });
-      editor.chain().focus().setComment(newCommentId).run(); // Use setComment to apply the mark
-      setActiveCommentId(newCommentId);
+    if (!commentText || !commentText.trim()) {
+      alert('Please enter comment text.');
+      return;
     }
+
+    const newCommentId = `c-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const newComment = {
+      id: newCommentId,
+      author: collaboratorLabel || currentUser.id, // Use collaboratorLabel if available
+      timestamp: new Date().toISOString(),
+      status: "open",
+      thread: [
+        {
+          text: commentText.trim(),
+          author: collaboratorLabel || currentUser.id, // Use collaboratorLabel if available
+          timestamp: new Date().toISOString()
+        }
+      ]
+    };
+    console.log('Adding new comment:', newComment);
+    setComments(prevComments => {
+      const updatedComments = [...prevComments, newComment];
+      console.log('Updated comments state:', updatedComments);
+      return updatedComments;
+    });
+    editor.chain().focus().setComment(newCommentId).run(); // Use setComment to apply the mark
+    setActiveCommentId(newCommentId);
+  };
+
+  const createEmptyComment = () => {
+    if (!editor || !editor.state.selection.from || editor.state.selection.empty) {
+      alert('Please select text to comment on.');
+      return;
+    }
+
+    const newCommentId = `c-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const newComment = {
+      id: newCommentId,
+      author: collaboratorLabel || currentUser.id,
+      timestamp: new Date().toISOString(),
+      status: "open",
+      thread: [], // Empty thread - will be filled when user writes
+      isNew: true // Flag to indicate this is a new comment that needs text
+    };
+    console.log('Creating empty comment:', newComment);
+    setComments(prevComments => {
+      const updatedComments = [...prevComments, newComment];
+      console.log('Updated comments state:', updatedComments);
+      return updatedComments;
+    });
+    editor.chain().focus().setComment(newCommentId).run(); // Use setComment to apply the mark
+    setActiveCommentId(newCommentId);
   };
 
   return (
@@ -295,7 +322,7 @@ function CollabEditorPage() {
         {collaboratorLabel && <p>Hello, {collaboratorLabel}!</p>}
         <div>
           <span>Status: {status} (Commit: {baseCommitHash ? baseCommitHash.substring(0, 7) : 'N/A'})</span>
-          <button onClick={addComment} style={{ margin: '1rem' }}>Add Comment</button>
+          <button onClick={createEmptyComment} style={{ margin: '1rem' }}>Add Comment</button>
           <button
             onClick={handleCollabCommit}
             style={{ marginRight: '2rem' }}
@@ -310,7 +337,7 @@ function CollabEditorPage() {
           {error ? <p style={{color: 'red'}}>{error}</p> : <EditorContent editor={editor} />}
           <FloatingCommentButton 
             editor={editor} 
-            onAddComment={addComment}
+            onAddComment={createEmptyComment}
           />
         </main>
         <CommentSidebar
@@ -319,6 +346,7 @@ function CollabEditorPage() {
           activeCommentId={activeCommentId}
           onCommentSelect={setActiveCommentId} // This is for selecting/activating a comment from the sidebar
           currentUser={currentUser} // Pass currentUser
+          onAddComment={addComment} // Pass the addComment function
         />
       </div>
     </div>
