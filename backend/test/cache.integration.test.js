@@ -8,17 +8,21 @@ const crypto = require('crypto');
 // --- Constants ---
 const API_BASE_URL = 'http://localhost:3000/api/docs'; // Assuming server runs on port 3000
 const REPOS_DIR = path.join(__dirname, '../repos'); // Relative to backend/test
-const CACHE_DIR = path.join(__dirname, '../cache/rendered_docs'); // Relative to backend/test
+// CACHE_DIR is the main cache directory.
+// CACHE_DIR_RENDERED_DOCS is a subdirectory for the JSON outputs of rendering.
+const CACHE_DIR = path.join(__dirname, '../cache');
+const CACHE_DIR_RENDERED_DOCS = path.join(CACHE_DIR, 'rendered_docs');
 const TEST_REPO_NAME = 'test-repo-cache-integration';
 const TEST_REPO_PATH = path.join(REPOS_DIR, TEST_REPO_NAME);
 const TEST_DOC_FILENAME = 'doc.qmd';
 const TEST_DOC_FILEPATH = path.join(TEST_REPO_PATH, TEST_DOC_FILENAME);
+const TEST_IMAGE_FILENAME = 'test_image.png';
 
 // Hardcoded for simplicity, as per subtask instructions
 const MOCK_REPO_ID = 'test-repo-id-cache';
 const MOCK_USER_ID = 'test-user-id-cache'; // Needed if auth is strict
 
-// --- Helper Functions (to be implemented) ---
+// --- Helper Functions ---
 
 // Makes an authenticated GET request (simplified: assumes no complex auth for now)
 async function getDocView(repoId, filepath, params = {}) {
@@ -50,15 +54,26 @@ async function getCurrentCommitHash(repoPath) {
 
 function calculateCacheFilename(repoId, docFilepath, commitHash) {
   const filepathHash = crypto.createHash('md5').update(docFilepath).digest('hex');
-  return path.join(CACHE_DIR, `${repoId}-${filepathHash}-${commitHash}.json`);
+  // Ensure this uses the specific cache for rendered documents
+  return path.join(CACHE_DIR_RENDERED_DOCS, `${repoId}-${filepathHash}-${commitHash}.json`);
+}
+
+// New helper function for asset cache directory
+function calculateAssetCacheDir(repoId, docFilename, commitHash) {
+  return path.join(CACHE_DIR, 'assets', repoId, commitHash, path.parse(docFilename).name + '_files');
 }
 
 async function createTestRepo() {
   await fs.rm(TEST_REPO_PATH, { recursive: true, force: true }); // Clean up if exists
   await fs.mkdir(TEST_REPO_PATH, { recursive: true });
   await git.init({ fs, dir: TEST_REPO_PATH });
-  await fs.writeFile(TEST_DOC_FILEPATH, '# Initial Document\nThis is the first version.');
+  // Update document content to include an image link
+  await fs.writeFile(TEST_DOC_FILEPATH, `# Initial Document\nThis is the first version.\n![A Test Image](./${TEST_IMAGE_FILENAME})`);
+  // Create a dummy image file in the repo
+  await fs.writeFile(path.join(TEST_REPO_PATH, TEST_IMAGE_FILENAME), 'dummy image content');
   await git.add({ fs, dir: TEST_REPO_PATH, filepath: TEST_DOC_FILENAME });
+  // Add the image file to git
+  await git.add({ fs, dir: TEST_REPO_PATH, filepath: TEST_IMAGE_FILENAME });
   await git.commit({
     fs,
     dir: TEST_REPO_PATH,
@@ -81,60 +96,104 @@ async function modifyTestDoc(content, message = 'Modify document') {
 // --- Test Suite ---
 describe('Document Rendering Cache Integration Tests', () => {
   beforeAll(async () => {
-    // Ensure REPOS_DIR and CACHE_DIR exist (as the app would create them)
+    // Ensure REPOS_DIR and various CACHE_DIR subdirectories exist
     await fs.mkdir(REPOS_DIR, { recursive: true });
-    await fs.mkdir(CACHE_DIR, { recursive: true });
+    await fs.mkdir(CACHE_DIR_RENDERED_DOCS, { recursive: true });
+    // Ensure the root 'assets' directory in CACHE_DIR exists
+    await fs.mkdir(path.join(CACHE_DIR, 'assets'), { recursive: true });
     await createTestRepo();
   });
 
   beforeEach(async () => {
-    // Clean up cache files before each test
+    // Clean up specific cache files and directories before each test
     try {
-      const files = await fs.readdir(CACHE_DIR);
-      for (const file of files) {
-        if (file.endsWith('.json')) {
-          await fs.unlink(path.join(CACHE_DIR, file));
+      // Clean rendered docs cache for MOCK_REPO_ID
+      const renderedDocFiles = await fs.readdir(CACHE_DIR_RENDERED_DOCS);
+      for (const file of renderedDocFiles) {
+        // Only remove files related to MOCK_REPO_ID to avoid interference if other tests use cache
+        if (file.startsWith(MOCK_REPO_ID) && file.endsWith('.json')) {
+          await fs.unlink(path.join(CACHE_DIR_RENDERED_DOCS, file));
         }
       }
+
+      // Clean assets cache for MOCK_REPO_ID
+      const assetCacheDirForRepo = path.join(CACHE_DIR, 'assets', MOCK_REPO_ID);
+      try {
+        await fs.access(assetCacheDirForRepo); // Check if it exists
+        await fs.rm(assetCacheDirForRepo, { recursive: true, force: true });
+      } catch (e) {
+        // If ENOENT, directory doesn't exist, which is fine for cleanup.
+        if (e.code !== 'ENOENT') throw e;
+      }
     } catch (error) {
-      if (error.code !== 'ENOENT') console.error('Error cleaning cache:', error);
+      // Allow ENOENT if CACHE_DIR_RENDERED_DOCS itself doesn't exist (e.g. first run)
+      if (error.code !== 'ENOENT') {
+        console.error('Error cleaning cache directories:', error);
+      }
     }
   });
 
   afterAll(async () => {
     // Clean up the test repository
     await fs.rm(TEST_REPO_PATH, { recursive: true, force: true });
-    // Optionally clean up all cache files again
-    // await fs.rm(CACHE_DIR, { recursive: true, force: true });
+    // Clean up specific cache for this test run to be tidy
+    const assetCacheDirForRepo = path.join(CACHE_DIR, 'assets', MOCK_REPO_ID);
+    try { await fs.rm(assetCacheDirForRepo, { recursive: true, force: true }); } catch (e) { if (e.code !== 'ENOENT') console.error("Error cleaning MOCK_REPO_ID asset cache in afterAll", e)}
+
+    try {
+        const renderedDocFiles = await fs.readdir(CACHE_DIR_RENDERED_DOCS);
+        for (const file of renderedDocFiles) {
+            if (file.startsWith(MOCK_REPO_ID)) {
+                await fs.unlink(path.join(CACHE_DIR_RENDERED_DOCS, file));
+            }
+        }
+    } catch (e) { if (e.code !== 'ENOENT') console.error("Error cleaning MOCK_REPO_ID doc cache in afterAll", e)}
   });
 
   it('Test 1: Cache Miss and Initial Cache Creation', async () => {
     console.log('Running Test 1: Cache Miss and Initial Cache Creation');
     const initialCommitHash = await getCurrentCommitHash(TEST_REPO_PATH);
-    const expectedCacheFile = calculateCacheFilename(MOCK_REPO_ID, TEST_DOC_FILENAME, initialCommitHash);
+    const expectedRenderedDocCacheFile = calculateCacheFilename(MOCK_REPO_ID, TEST_DOC_FILENAME, initialCommitHash);
+    const expectedAssetCacheDir = calculateAssetCacheDir(MOCK_REPO_ID, TEST_DOC_FILENAME, initialCommitHash);
 
     // 1. Make the first request
-    // IMPORTANT: This request will likely fail with 401/403 due to auth if not handled.
-    // The docs.routes.js looks for `req.user.id` which won't be present.
-    // For now, we'll proceed assuming this can be made to work by adjusting the environment
-    // or temporarily modifying the route for testing.
     const response = await getDocView(MOCK_REPO_ID, TEST_DOC_FILENAME);
 
-    expect(response.status).toBe(200); // This assertion will guide if auth is an issue
-    expect(response.data).toBeDefined(); // Basic check for content
-
-    // Check if ProseMirror JSON structure is plausible (very basic)
+    expect(response.status).toBe(200);
+    expect(response.data).toBeDefined();
     expect(response.data.type).toBe('doc');
     expect(response.data.content).toBeInstanceOf(Array);
 
-    // Check for cache file existence
+    // Check for rendered doc cache file existence
     try {
-      await fs.access(expectedCacheFile);
-      // file exists
+      await fs.access(expectedRenderedDocCacheFile);
     } catch (e) {
-      throw new Error(`Cache file ${expectedCacheFile} was not created.`);
+      throw new Error(`Rendered doc cache file ${expectedRenderedDocCacheFile} was not created.`);
     }
-    console.log('Test 1 Passed (assertions pending full auth solution)');
+
+    // Check for asset cache directory and file existence
+    try {
+      await fs.access(expectedAssetCacheDir);
+    } catch (e) {
+      throw new Error(`Asset cache directory ${expectedAssetCacheDir} was not created.`);
+    }
+    try {
+      await fs.access(path.join(expectedAssetCacheDir, TEST_IMAGE_FILENAME));
+    } catch (e) {
+      throw new Error(`Asset file ${TEST_IMAGE_FILENAME} was not created in ${expectedAssetCacheDir}.`);
+    }
+
+    // Check image src in response
+    // Assuming the image is in a paragraph: { type: 'paragraph', content: [ ..., { type: 'image', attrs: { src: '...' } }, ... ] }
+    const imageNode = response.data.content
+      .find(node => node.type === 'paragraph')?.content
+      ?.find(innerNode => innerNode.type === 'image');
+
+    expect(imageNode).toBeDefined();
+    const expectedImgSrc = `/api/assets/${MOCK_REPO_ID}/${initialCommitHash}/${path.parse(TEST_DOC_FILENAME).name}_files/${TEST_IMAGE_FILENAME}`;
+    expect(imageNode.attrs.src).toBe(expectedImgSrc);
+
+    console.log('Test 1 Passed');
   });
 
   it('Test 2: Cache Hit', async () => {
@@ -142,7 +201,7 @@ describe('Document Rendering Cache Integration Tests', () => {
     const initialCommitHash = await getCurrentCommitHash(TEST_REPO_PATH);
     const expectedCacheFile = calculateCacheFilename(MOCK_REPO_ID, TEST_DOC_FILENAME, initialCommitHash);
 
-    // 1. First request (to populate cache) - assuming this works (see Test 1 notes)
+    // 1. First request (to populate cache)
     await getDocView(MOCK_REPO_ID, TEST_DOC_FILENAME);
 
     // Check it was created
@@ -187,18 +246,37 @@ describe('Document Rendering Cache Integration Tests', () => {
     expect(response.status).toBe(200);
     expect(response.data).toBeDefined();
     // A more specific check for updated content would be good, e.g., checking response.data.content
-    // For now, we rely on a new cache file being created.
+    // For now, we rely on a new cache file being created for the doc.
+    const expectedNewAssetCacheDir = calculateAssetCacheDir(MOCK_REPO_ID, TEST_DOC_FILENAME, secondCommitHash);
 
-    // Check for the new cache file
+    // Check for the new rendered doc cache file
     try {
         await fs.access(secondCacheFile);
     } catch (e) {
-        throw new Error(`New cache file ${secondCacheFile} was not created after commit.`);
+        throw new Error(`New rendered doc cache file ${secondCacheFile} was not created after commit.`);
     }
 
-    // Optionally, check that the old cache file still exists (or not, depending on eviction)
-    // For now, we only care that the new one is there.
-    console.log('Test 3 Passed (assertions pending full auth solution)');
+    // Check for new asset cache directory and file existence
+    try {
+      await fs.access(expectedNewAssetCacheDir);
+    } catch (e) {
+      throw new Error(`New asset cache directory ${expectedNewAssetCacheDir} was not created after commit.`);
+    }
+    try {
+      await fs.access(path.join(expectedNewAssetCacheDir, TEST_IMAGE_FILENAME));
+    } catch (e) {
+      throw new Error(`Asset file ${TEST_IMAGE_FILENAME} was not created in new asset cache dir ${expectedNewAssetCacheDir}.`);
+    }
+
+    // Check image src in response for the new commit hash
+    const imageNode = response.data.content
+      .find(node => node.type === 'paragraph')?.content
+      ?.find(innerNode => innerNode.type === 'image');
+
+    expect(imageNode).toBeDefined();
+    const expectedImgSrc = `/api/assets/${MOCK_REPO_ID}/${secondCommitHash}/${path.parse(TEST_DOC_FILENAME).name}_files/${TEST_IMAGE_FILENAME}`;
+    expect(imageNode.attrs.src).toBe(expectedImgSrc);
+    console.log('Test 3 Passed');
   });
 
 
