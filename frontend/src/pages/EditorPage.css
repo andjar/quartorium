@@ -37,6 +37,10 @@
     margin-top: 2rem; /* Space from header */
     margin-bottom: 2rem; /* Space from bottom */
     box-sizing: border-box; /* Include padding in width calculation */
+    flex-grow: 1; /* Takes up available space in .editor-main-area */
+    overflow-y: auto; /* Allow editor content itself to scroll */
+    height: 100%; /* Fill the height of .editor-main-area */
+    position: relative; /* Ensure positioning context for floating elements */
   }
 
 .editor-main-area {
@@ -98,20 +102,4 @@ span[data-type="figure-reference"]:hover {
 /* Ensure that captions within Quarto figures remain centered */
 .quarto-block-output figure figcaption {
     text-align: center;
-}
-
-/* Adjust .editor-content-area to be a flex child */
-.editor-content-area {
-  flex-grow: 1; /* Takes up available space in .editor-main-area */
-  /* The existing padding and max-width are fine, but remove margin-top/bottom
-     as vertical spacing is now handled by .editor-main-area and header */
-  padding: 2rem 1.5rem;
-  background-color: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-  overflow-y: auto; /* Allow editor content itself to scroll */
-  /* max-width and margin: 0 auto will still center it if there's extra horizontal space */
-  max-width: 800px;
-  margin: 0 auto; /* Center if sidebar is not present or if space allows */
-  height: 100%; /* Fill the height of .editor-main-area */
 }

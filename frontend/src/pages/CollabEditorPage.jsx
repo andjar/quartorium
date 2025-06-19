@@ -9,6 +9,7 @@ import Citation from '../components/editor/Citation';
 import FigureReference from '../components/editor/FigureReference';
 import CommentMark from '../components/editor/CommentMark';
 import CommentSidebar from '../components/editor/CommentSidebar';
+import FloatingCommentButton from '../components/editor/FloatingCommentButton';
 import './EditorPage.css';
 
 function CollabEditorPage() {
@@ -286,6 +287,10 @@ function CollabEditorPage() {
       <div className="editor-main-area">
         <main className="editor-content-area">
           {error ? <p style={{color: 'red'}}>{error}</p> : <EditorContent editor={editor} />}
+          <FloatingCommentButton 
+            editor={editor} 
+            onAddComment={addComment}
+          />
         </main>
         <CommentSidebar
           comments={comments}
