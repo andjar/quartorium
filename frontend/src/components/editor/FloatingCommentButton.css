@@ -3,34 +3,38 @@
   z-index: 1000;
   pointer-events: auto;
   animation: fadeIn 0.2s ease-in-out;
+  display: flex; /* Add flex display to arrange buttons in a row */
+  gap: 4px; /* Add some space between the buttons */
 }
 
 .floating-comment-button button {
-  background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 20px;
-  padding: 8px 16px;
+  background-color: var(--accent-primary);
+  color: var(--text-on-accent);
+  border: none; /* Keeping border: none; as per instruction */
+  border-radius: 16px; /* Adjusted border-radius */
+  padding: 8px 12px; /* Adjusted padding for smaller buttons */
   font-size: 14px;
   font-weight: 500;
+  font-family: inherit; /* Ensure 'Inter' is inherited */
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+  box-shadow: 0 2px 8px var(--shadow-color-soft); /* Updated box-shadow */
   transition: all 0.2s ease;
   white-space: nowrap;
   display: flex;
   align-items: center;
+  justify-content: center; /* Center content within buttons */
   gap: 6px;
 }
 
 .floating-comment-button button:hover {
-  background: #0056b3;
+  background-color: var(--accent-primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 123, 255, 0.4);
+  box-shadow: 0 4px 12px var(--shadow-color-soft); /* Updated box-shadow on hover */
 }
 
 .floating-comment-button button:active {
   transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
+  box-shadow: 0 2px 6px var(--shadow-color-soft); /* Adjusted box-shadow on active */
 }
 
 @keyframes fadeIn {

@@ -83,6 +83,13 @@ const FloatingCommentButton = ({ onAddComment, editor }) => {
     setIsVisible(false);
   };
 
+  const handleFormatClick = (formatAction) => {
+    if (editor) {
+      formatAction();
+    }
+    setIsVisible(false);
+  };
+
   if (!isVisible) return null;
 
   return (
@@ -96,6 +103,12 @@ const FloatingCommentButton = ({ onAddComment, editor }) => {
       <button onClick={handleAddComment}>
         💬 Add Comment
       </button>
+      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleBold().run())}>B</button>
+      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleItalic().run())}>I</button>
+      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleStrike().run())}>S</button>
+      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleHeading({ level: 1 }).run())}>H1</button>
+      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleHeading({ level: 2 }).run())}>H2</button>
+      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleHeading({ level: 3 }).run())}>H3</button>
     </div>
   );
 };

@@ -1,6 +1,6 @@
 /* Override root container constraints for editor pages */
 .editor-page-container {
-    background-color: #f5f5f5; /* Light gray background for the page */
+    background-color: var(--background-primary); /* Use new variable */
     min-height: 100vh; /* Full viewport height */
     width: 100vw; /* Full width of parent */
     margin-left: calc(-50vw + 50%); /* Override any parent container constraints */
@@ -12,7 +12,7 @@
   /* A full-width header bar for controls, with a subtle bottom border */
   .editor-header {
     padding: 1rem;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--border-color); /* Use new variable */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -20,7 +20,7 @@
     top: 0;
     left: 0;
     right: 0;
-    background-color: #fff;
+    background-color: var(--background-secondary); /* Use new variable */
     z-index: 1000; /* High z-index to ensure it stays above all content */
     width: 100%; /* Full width */
   }
@@ -30,11 +30,11 @@
     margin: 0;
     font-size: 1.1rem;
     font-weight: 500;
-    color: #2c5aa0;
-    background-color: #e8f4fd;
+    color: var(--accent-primary); /* Use new variable */
+    background-color: var(--accent-highlight-soft); /* Use new variable */
     padding: 0.5rem 1rem;
     border-radius: 20px;
-    border: 1px solid #b3d9ff;
+    border: 1px solid var(--accent-primary); /* Use new variable */
   }
   
   /* The main content area that holds the editor */
@@ -44,10 +44,10 @@
     width: 100%; /* Full width up to max-width */
     margin: 0 auto; /* This centers the column on the page */
     padding: 2rem 1.5rem; /* Vertical and horizontal padding */
-    background-color: #fff; /* White background for the edit window */
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); /* Subtle shadow to separate from background */
+    background-color: var(--background-secondary); /* Use new variable */
+    box-shadow: 0 2px 8px var(--shadow-color-soft); /* Use new variable */
     border-radius: 8px; /* Rounded corners */
-    margin-top: 2rem; /* Space from header */
+    margin-top: 0; /* Adjusted: .editor-main-area handles top spacing due to fixed header */
     margin-bottom: 2rem; /* Space from bottom */
     box-sizing: border-box; /* Include padding in width calculation */
     flex-grow: 1; /* Takes up available space in .editor-main-area */
@@ -63,16 +63,16 @@
   /* Adjust height to account for fixed header */
   height: calc(100vh - 80px); /* Increased from 60px to account for header height */
   margin-top: 80px; /* Add top margin to push content below fixed header */
+  padding: 1rem; /* Added padding for breathing room */
 }
   
   /* This is the direct parent of the TipTap editor content */
   /* We need to style it to look like a document */
   .ProseMirror {
     outline: none; /* Removes the default focus outline */
-    line-height: 1.7;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    font-size: 18px; /* A slightly larger, more readable font size */
-    color: #1a1a1a;
+    line-height: 1.6; /* Adjusted line-height */
+    font-size: 17px; /* Adjusted font size */
+    color: var(--text-primary); /* Use new variable */
     text-align: left; /* Ensure all text in the editor defaults to left-aligned */
   }
   
@@ -80,10 +80,22 @@
   .ProseMirror h1,
   .ProseMirror h2,
   .ProseMirror h3 {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    font-weight: 600;
-    line-height: 1.3;
+    /* font-family is inherited */
+    font-weight: 600; /* Default weight for headings */
+    line-height: 1.3; /* Specific line-height for headings */
     margin-bottom: 0.5em;
+  }
+
+  .ProseMirror h1 {
+    font-size: 2em; /* Standardized h1 size */
+  }
+
+  .ProseMirror h2 {
+    font-size: 1.75em; /* Standardized h2 size */
+  }
+
+  .ProseMirror h3 {
+    font-size: 1.5em; /* Standardized h3 size */
   }
   
   .ProseMirror p {
@@ -95,25 +107,99 @@
   }
 
 .comment-mark {
-  background-color: #ffe0b3; /* Light orange highlight for commented text */
+  background-color: var(--accent-highlight-soft); /* Use new variable */
 }
 
-  /* Style for the new citation node */
+  /* Style for the new citation node - These are primarily styled in index.css now for consistency */
+  /* However, if EditorPage needs specific overrides, they can go here. */
+  /* For now, we assume index.css styles are sufficient. */
+/*
 span[data-type="citation"],
 span[data-type="figure-reference"] {
-  background-color: #e0e0ff;
+  background-color: var(--accent-highlight-soft);
+  border: 1px solid var(--accent-primary);
   border-radius: 3px;
   padding: 1px 4px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, border-color 0.2s;
+  color: var(--accent-primary);
 }
 
 span[data-type="citation"]:hover,
 span[data-type="figure-reference"]:hover {
-  background-color: #c0c0ff;
+  background-color: var(--accent-primary);
+  color: var(--text-on-accent);
+  border-color: var(--accent-primary-hover);
 }
+*/
 
 /* Ensure that captions within Quarto figures remain centered */
 .quarto-block-output figure figcaption {
     text-align: center;
+}
+
+/* Comment Sidebar Styles (Speculative) */
+/* Assuming CommentSidebar.jsx's root element might have or be given this class,
+   or it's a wrapper div in EditorPage.jsx around the <CommentSidebar /> component.
+   For this exercise, we'll assume direct styling capability or predictable internal classes. */
+
+.comment-sidebar { /* Main container for the sidebar */
+  background-color: var(--background-primary);
+  padding: 1rem;
+  border-left: 1px solid var(--border-color);
+  width: 300px; /* Adjust as needed */
+  overflow-y: auto;
+  /* font-family is inherited from body/root which is 'Inter' */
+  height: 100%; /* To fill the .editor-main-area height */
+  box-sizing: border-box;
+}
+
+.comment-item { /* Individual comment item */
+  background-color: var(--background-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9em;
+  color: var(--text-primary);
+}
+
+.comment-item p {
+  margin-bottom: 0.5em;
+  line-height: 1.5;
+  color: var(--text-primary); /* Ensure paragraph text uses primary text color */
+}
+
+.comment-item p:last-child {
+  margin-bottom: 0;
+}
+
+.comment-item small, .comment-item .comment-author { /* For author names or timestamps */
+  color: var(--text-secondary);
+  font-size: 0.9em; /* Slightly smaller for meta text */
+  margin-bottom: 0.25em;
+  display: block;
+}
+
+.comment-item.active, .comment-item[data-active="true"] { /* Active comment item */
+  border-left: 3px solid var(--accent-primary);
+  background-color: var(--accent-highlight-soft);
+  /* Adjust padding to account for the thicker border if needed */
+  /* padding-left: calc(0.75rem - 2px); */ /* Example if border makes content shift */
+}
+
+/* Styles for CollabEditorPage specific header content */
+.editor-header > p { /* Targets direct <p> children in .editor-header, for "Hello, {collaboratorLabel}" */
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+  /* This will override the more specific .editor-header p style if it was previously a direct child */
+}
+
+.editor-header h3 { /* For "Quartorium Collaborative Editor" title */
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
 }
