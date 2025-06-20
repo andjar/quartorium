@@ -1,7 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@400;600;700&display=swap');
 
 :root {
-  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* Font Family Variables for Modern & Clean Pairing */
+  --font-ui: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --font-content: 'Source Serif Pro', Georgia, 'Times New Roman', serif;
+  
+  /* Default to UI font for general interface */
+  font-family: var(--font-ui);
   line-height: 1.5;
   font-weight: 400;
 
@@ -80,8 +86,8 @@ button {
   border: 1px solid var(---border-color); /* Changed from transparent */
   padding: 0.75em 1.5em; /* Adjusted padding */
   font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
+  font-weight: 500; /* Medium weight for buttons as recommended */
+  font-family: var(--font-ui); /* Explicitly use Inter for UI elements */
   background-color: var(--accent-highlight-soft); /* Use accent for button background */
   color: var(--text-secondary); /* Text on accent color */
   cursor: pointer;
@@ -135,6 +141,7 @@ button:focus-visible {
   border-radius: 3px;
   padding: 2px 6px;
   font-size: 0.9em;
+  font-family: var(--font-content); /* Use content font for citations */
   color: var(--accent-primary);
   cursor: pointer;
   transition: background-color 0.2s, border-color 0.2s;
@@ -166,6 +173,7 @@ button:focus-visible {
   border-radius: 3px;
   padding: 2px 6px;
   font-size: 0.9em;
+  font-family: var(--font-content); /* Use content font for figure references */
   color: var(--accent-primary); /* Or a secondary accent */
   cursor: pointer;
   transition: background-color 0.2s, border-color 0.2s;

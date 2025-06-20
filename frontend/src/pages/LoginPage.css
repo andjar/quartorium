@@ -5,6 +5,7 @@
     justify-content: center;
     height: 100vh;
     text-align: center;
+    font-family: var(--font-ui); /* Use Inter for UI */
   }
   
   .login-button {
@@ -13,7 +14,8 @@
     gap: 0.75rem;
     padding: 10px 20px;
     font-size: 1rem;
-    font-weight: bold;
+    font-weight: 600; /* Semi-bold for buttons as recommended */
+    font-family: var(--font-ui); /* Use Inter for UI */
     color: white;
     background-color: #24292e;
     border: 1px solid rgba(27, 31, 35, 0.15);

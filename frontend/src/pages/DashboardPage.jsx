@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import ShareModal from '../components/ShareModal';
+import './DashboardPage.css';
 
 function DashboardPage() {
   const [user, setUser] = useState(null);
@@ -111,71 +112,80 @@ function DashboardPage() {
     window.location.href = 'http://localhost:8000/api/auth/logout';
   };
 
-  if (loading) return <div>Loading dashboard...</div>;
+  if (loading) return <div className="dashboard-loading">Loading dashboard...</div>;
 
   return (
-    <div>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderBottom: '1px solid #eee' }}>
+    <div className="dashboard-container">
+      <header className="dashboard-header">
         <h2>Quartorium</h2>
         {user && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className="dashboard-user-info">
             <span>Welcome, {user.username}!</span>
             <img src={user.avatar_url} alt="User avatar" width="40" style={{ borderRadius: '50%' }} />
-            <button onClick={handleLogout}>Logout</button>
+            <button className="dashboard-logout-button" onClick={handleLogout}>Logout</button>
           </div>
         )}
       </header>
-      <main style={{ padding: '1rem' }}>
+      <main className="dashboard-main">
         <h3>Connect a Repository</h3>
-        <form onSubmit={handleAddRepo} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <form className="dashboard-form" onSubmit={handleAddRepo}>
           <input
             type="text"
             value={newRepoUrl}
             onChange={(e) => setNewRepoUrl(e.target.value)}
             placeholder="https://github.com/username/my-paper"
-            style={{ width: '300px', padding: '8px' }}
             disabled={isAdding}
           />
           <button type="submit" disabled={isAdding}>
             {isAdding ? 'Adding...' : 'Add Repository'}
           </button>
         </form>
-        {error && <p style={{ color: 'red', marginTop: '10px' }}>{error}</p>}
+        {error && <p className="dashboard-error">{error}</p>}
 
-        <div style={{ display: 'flex', gap: '2rem', marginTop: '2rem' }}>
-          <div style={{ flex: 1 }}>
-            <h4>My Repositories</h4>
+        <div className="dashboard-content">
+          <div className="dashboard-repos-section">
+            <h4 className="dashboard-section-title">My Repositories</h4>
             {repos.map((repo) => (
-              <div key={repo.id} onClick={() => handleSelectRepo(repo)} style={{ cursor: 'pointer', padding: '10px', border: selectedRepo?.id === repo.id ? '2px solid blue' : '1px solid #ccc', marginBottom: '5px', borderRadius: '4px' }}>
+              <div 
+                key={repo.id} 
+                onClick={() => handleSelectRepo(repo)} 
+                className={`dashboard-repo-item ${selectedRepo?.id === repo.id ? 'selected' : ''}`}
+              >
                 <strong>{repo.full_name}</strong>
               </div>
             ))}
           </div>
-          <div style={{ flex: 2, borderLeft: '1px solid #eee', paddingLeft: '2rem' }}>
-            <h4>Quarto Files</h4>
+          <div className="dashboard-files-section">
+            <h4 className="dashboard-section-title">Quarto Files</h4>
             {selectedRepo && (
               <>
                 {isLoadingFiles ? (
-                  <p>Loading files from {selectedRepo.name}...</p>
+                  <p className="dashboard-loading">Loading files from {selectedRepo.name}...</p>
                 ) : qmdFiles.length > 0 ? (
-                  <ul>
+                  <ul className="dashboard-file-list">
                     {qmdFiles.map((file) => (
-                      <li key={file} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Link to={`/editor?repoId=${selectedRepo.id}&filepath=${encodeURIComponent(file)}`}>
+                      <li key={file} className="dashboard-file-item">
+                        <Link 
+                          to={`/editor?repoId=${selectedRepo.id}&filepath=${encodeURIComponent(file)}`}
+                          className="dashboard-file-link"
+                        >
                           {file}
                         </Link>
-                        <button onClick={() => openShareModal(selectedRepo.id, file)}>
+                        <button 
+                          className="dashboard-share-button"
+                          onClick={() => openShareModal(selectedRepo.id, file)}
+                        >
                             Share
                         </button>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p>No .qmd files found in this repository.</p>
+                  <p className="dashboard-empty-state">No .qmd files found in this repository.</p>
                 )}
               </>
             )}
-            {!selectedRepo && <p>Select a repository to see its files.</p>}
+            {!selectedRepo && <p className="dashboard-empty-state">Select a repository to see its files.</p>}
           </div>
         </div>
       </main>

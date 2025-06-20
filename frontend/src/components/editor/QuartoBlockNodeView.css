@@ -22,7 +22,7 @@
   border-radius: 4px;
   padding: 2px 8px;
   cursor: pointer;
-  font-family: sans-serif;
+  font-family: var(--font-ui);
   font-size: 0.8em;
 }
 
@@ -33,12 +33,14 @@
 .quarto-block-code {
   background-color: #f8f8f8;
   border-bottom: 1px solid #ddd;
+  font-family: monospace;
 }
 
 .quarto-block-output {
   padding: 1rem;
   /* This is important for plots and tables to render correctly */
   overflow-x: auto;
+  font-family: var(--font-content);
 }
 
 .quarto-block-content-wrapper {
@@ -75,11 +77,13 @@
 .metadata-block .quarto-block-output {
   padding: 1rem 1.5rem;
   background-color: #fafafa; /* A very light grey for subtlety */
+  font-family: var(--font-content); /* Use Source Serif Pro for content */
 }
 
 .metadata-block h1 {
   font-size: 1.8rem;
   font-weight: 600;
+  font-family: var(--font-content); /* Use Source Serif Pro for headings */
   margin-top: 0;
   margin-bottom: 0.75rem;
   border-bottom: 1px solid #eee;
@@ -92,6 +96,7 @@
   gap: 0.5rem 1.5rem; /* Row and column gap */
   font-size: 0.95rem;
   color: #333;
+  font-family: var(--font-content); /* Use Source Serif Pro for content */
 }
 
 .metadata-block .author {
@@ -120,11 +125,13 @@
 .bibliography-block .quarto-block-output {
   padding: 1rem 1.5rem;
   background-color: #fdfdfd;
+  font-family: var(--font-content); /* Use Source Serif Pro for content */
 }
 
 .bibliography-block h2 {
   font-size: 1.4rem;
   font-weight: 600;
+  font-family: var(--font-content); /* Use Source Serif Pro for headings */
   margin-top: 0;
   margin-bottom: 1rem;
   border-bottom: 1px solid #eee;
@@ -144,6 +151,7 @@
   font-size: 0.9rem;
   line-height: 1.5;
   color: #333;
+  font-family: var(--font-content); /* Use Source Serif Pro for content */
 }
 
 .bibliography-block li a {
