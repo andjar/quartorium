@@ -3,6 +3,8 @@
   z-index: 1000;
   pointer-events: auto;
   animation: fadeIn 0.2s ease-in-out;
+  display: flex; /* Add flex display to arrange buttons in a row */
+  gap: 4px; /* Add some space between the buttons */
 }
 
 .floating-comment-button button {
@@ -10,7 +12,7 @@
   color: var(--text-on-accent);
   border: none; /* Keeping border: none; as per instruction */
   border-radius: 16px; /* Adjusted border-radius */
-  padding: 8px 16px;
+  padding: 8px 12px; /* Adjusted padding for smaller buttons */
   font-size: 14px;
   font-weight: 500;
   font-family: inherit; /* Ensure 'Inter' is inherited */
@@ -20,6 +22,7 @@
   white-space: nowrap;
   display: flex;
   align-items: center;
+  justify-content: center; /* Center content within buttons */
   gap: 6px;
 }
 
