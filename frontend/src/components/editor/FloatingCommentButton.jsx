@@ -22,32 +22,35 @@ const FloatingCommentButton = ({ onAddComment, editor }) => {
       const editorElement = editor.view.dom;
       if (!editorElement) return;
 
-      // Get the selection coordinates
-      const coords = editor.view.coordsAtPos(selection.to);
+      // Get coordinates for both start and end of selection
+      const startCoords = editor.view.coordsAtPos(selection.from);
+      const endCoords = editor.view.coordsAtPos(selection.to);
       
-      // Calculate position relative to the editor
-      const editorRect = editorElement.getBoundingClientRect();
-      const x = coords.left - editorRect.left - 60;
-      const y = coords.top - editorRect.top; // Position closer to the selection (reduced from -40)
-
       // Ensure the button stays within the editor bounds
       const buttonWidth = 400; // Updated to account for all buttons (Add Comment, B, I, S, H1, H2, H3)
       const buttonHeight = 32; // Approximate button height
       
+      // Calculate the center of the selection horizontally
+      const selectionCenterX = (startCoords.left + endCoords.left) / 2;
+      
+      // Position relative to viewport (since we're using position: fixed)
+      const x = selectionCenterX - (buttonWidth / 2); // Center the toolbar on selection
+      const y = startCoords.top - 35; // Position just above the selection
+      
       let adjustedX = x;
       let adjustedY = y;
 
-      // Adjust horizontal position if button would go outside editor
-      if (x + buttonWidth > editorRect.width) {
-        adjustedX = editorRect.width - buttonWidth - 10;
+      // Adjust horizontal position if button would go outside viewport
+      if (x + buttonWidth > window.innerWidth) {
+        adjustedX = window.innerWidth - buttonWidth - 10;
       }
       if (x < 0) {
         adjustedX = 10;
       }
 
-      // Adjust vertical position if button would go above editor
+      // Adjust vertical position if button would go above viewport
       if (y < 0) {
-        adjustedY = coords.bottom - editorRect.top + 10;
+        adjustedY = endCoords.bottom + 5; // Position below selection instead
       }
 
       setPosition({ x: adjustedX, y: adjustedY });
@@ -133,6 +136,10 @@ const FloatingCommentButton = ({ onAddComment, editor }) => {
         console.log('H3 button clicked');
         return editor.chain().focus().toggleHeading({ level: 3 }).run();
       })}>H3</button>
+      <button onClick={() => handleFormatClick(() => {
+        console.log('Clear formatting button clicked');
+        return editor.chain().focus().clearNodes().unsetAllMarks().run();
+      })}>N</button>
     </div>
   );
 };

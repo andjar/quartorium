@@ -353,7 +353,7 @@ function CollabEditorPage() {
   return (
     <div className="editor-page-container">
       <header className="editor-header">
-        <h3>Quartorium Collaborative Editor</h3>
+        <h3>Quartorium</h3>
         {collaboratorLabel && <p>Hello, {collaboratorLabel}!</p>}
         <div>
           <span>Status: {status} (Commit: {baseCommitHash ? baseCommitHash.substring(0, 7) : 'N/A'})</span>

@@ -1,7 +1,7 @@
 /* FloatingCommentButton.css - Refactored for a Muted & Precise Look */
 
 .floating-comment-button {
-  position: absolute;
+  position: fixed;
   z-index: 500;
   pointer-events: auto;
   animation: subtleFadeIn 0.15s ease-out;
