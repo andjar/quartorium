@@ -7,7 +7,7 @@ import debounce from 'lodash.debounce';
 import QuartoBlock from '../components/editor/QuartoBlock';
 import Citation from '../components/editor/Citation';
 import FigureReference from '../components/editor/FigureReference';
-import CommentMark from '../components/editor/CommentMark';
+import CommentMark, { commentHighlightPluginKey } from '../components/editor/CommentMark';
 import CommentSidebar from '../components/editor/CommentSidebar';
 import FloatingCommentButton from '../components/editor/FloatingCommentButton';
 import './EditorPage.css';
@@ -32,7 +32,6 @@ function CollabEditorPage() {
     id: collaboratorLabel || `user-${Math.random().toString(36).substr(2, 9)}`, 
     name: collaboratorLabel || 'Current User' 
   };
-
 
   const handleCollabCommit = async () => {
     if (!baseCommitHash) {
@@ -121,12 +120,10 @@ function CollabEditorPage() {
       Citation,
       FigureReference,
       CommentMark.configure({
-        HTMLAttributes: { class: 'comment-mark' },
         onCommentClick: (id) => {
           setActiveCommentId(id);
           // Here you would also scroll the sidebar to the comment
         },
-        activeCommentId: activeCommentId,
       }),
     ],
     content: {
@@ -179,7 +176,32 @@ function CollabEditorPage() {
     onBeforeCreate: ({ editor }) => {
       console.log('Editor before create');
     },
-  }, [activeCommentId]);
+  }, []); // The dependency array should be empty.
+
+  // 👇 --- THIS IS THE FINAL, CORRECT useEffect --- 👇
+  useEffect(() => {
+    // Don't do anything if the editor isn't ready.
+    if (!editor || editor.isDestroyed) {
+      console.log('Editor not ready or destroyed, skipping transaction');
+      return;
+    }
+
+    console.log('Dispatching comment highlight transaction for activeId:', activeCommentId);
+    console.log('Plugin key:', commentHighlightPluginKey);
+    console.log('Plugin key name:', commentHighlightPluginKey.key);
+    
+    // Dispatch a transaction with the correct plugin key that our plugin will listen for.
+    // This is the correct, performant way to send information to a plugin.
+    const transaction = editor.state.tr.setMeta(commentHighlightPluginKey, {
+      activeId: activeCommentId,
+    });
+    
+    console.log('Transaction created, checking meta:', transaction.getMeta(commentHighlightPluginKey));
+    editor.view.dispatch(transaction);
+    
+    console.log('Transaction dispatched successfully');
+
+  }, [activeCommentId, editor]); // This runs only when the active ID changes.
 
   // Add effect to save when comments change
   useEffect(() => {
