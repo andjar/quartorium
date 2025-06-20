@@ -1,5 +1,26 @@
 const { parseQmd } = require('./qmdBlockParser'); // Adjust path if needed
 
+// Configuration for debug mode
+const DEBUG_MODE = process.env.NODE_ENV !== 'production';
+
+/**
+ * Helper function to conditionally log debug messages
+ */
+function debugLog(...args) {
+  if (DEBUG_MODE) {
+    console.log(...args);
+  }
+}
+
+/**
+ * Helper function to conditionally log debug warnings
+ */
+function debugWarn(...args) {
+  if (DEBUG_MODE) {
+    console.warn(...args);
+  }
+}
+
 /**
  * Splits text into sentences and adds line breaks after each sentence.
  * This makes diffing easier by allowing sentence-by-sentence comparison.
@@ -10,11 +31,40 @@ const { parseQmd } = require('./qmdBlockParser'); // Adjust path if needed
 function addLineBreaksAfterSentences(text) {
   if (!text || typeof text !== 'string') return text;
   
-  // Split on sentence endings (., !, ?) followed by whitespace or end of string
-  // This regex handles common sentence endings while preserving abbreviations
-  const sentences = text.split(/([.!?])\s+/);
+  // More sophisticated sentence splitting that handles:
+  // - Abbreviations (Dr., Mr., etc.)
+  // - Decimal numbers (3.14)
+  // - Ellipses (...)
+  // - Quotes at sentence endings
+  // - Multiple punctuation marks
   
-  if (sentences.length <= 1) return text;
+  // First, protect common abbreviations and numbers
+  let protectedText = text
+    // Protect decimal numbers
+    .replace(/(\d+)\.(\d+)/g, '$1<DECIMAL>$2')
+    // Protect common abbreviations only when followed by a name/title (not at sentence end)
+    .replace(/\b(Dr|Mr|Mrs|Ms|Prof|Sr|Jr|Inc|Ltd|Co|Corp|St|Ave|Blvd|Rd|Ct|Pl|Ln|Apt|Ste|Fl|Rm|Bldg|Dept|Univ|Uni|Assoc|Gov|Sen|Rep|Gen|Col|Maj|Capt|Lt|Sgt|Cpl|Pvt|Adm|Gov|Pres|VP|CEO|CFO|CTO|PhD|MBA|BA|BS|MA|MS|LLB|JD|MD|RN|LPN|CPA|Esq|Hon|Rev|Fr|Sr|Br|Pope|Queen|King|Prince|Princess|Duke|Duchess|Lord|Lady|Sir|Dame|Baron|Baroness|Count|Countess|Earl|Viscount|Viscountess|Marquess|Marchioness)\.\s+([A-Z])/gi, '$1<ABBR> $2')
+    // Protect academic/technical abbreviations that are commonly followed by text
+    .replace(/\b(etc|vs|i\.e|e\.g|viz|cf|ibid|op\.cit|loc\.cit|et\.al|p\.|pp\.|vol\.|no\.|ch\.|sec\.|fig\.|tab\.|eq\.|ref\.|refs\.|app\.|apps\.|ex\.|exs\.|def\.|defs\.|thm\.|thms\.|lem\.|lems\.|cor\.|cors\.|prop\.|props\.|prob\.|probs\.|sol\.|sols\.|exer\.|exers\.|note\.|notes\.|rem\.|rems\.)\.\s+([a-zA-Z])/gi, '$1<ABBR> $2')
+    // Protect ellipses
+    .replace(/\.{3,}/g, '<ELLIPSIS>')
+    // Protect URLs
+    .replace(/(https?:\/\/[^\s]+)/g, '<URL>$1</URL>')
+    // Protect email addresses
+    .replace(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, '<EMAIL>$1</EMAIL>');
+  
+  // Split on sentence endings (., !, ?) followed by whitespace or end of string
+  const sentences = protectedText.split(/([.!?])\s+/);
+  
+  if (sentences.length <= 1) {
+    // Restore protected content
+    return protectedText
+      .replace(/<DECIMAL>/g, '.')
+      .replace(/<ABBR>\s+/g, '. ')
+      .replace(/<ELLIPSIS>/g, '...')
+      .replace(/<URL>(.*?)<\/URL>/g, '$1')
+      .replace(/<EMAIL>(.*?)<\/EMAIL>/g, '$1');
+  }
   
   // Reconstruct with line breaks after each sentence
   let result = '';
@@ -27,6 +77,14 @@ function addLineBreaksAfterSentences(text) {
       result += sentences[i];
     }
   }
+  
+  // Restore protected content
+  result = result
+    .replace(/<DECIMAL>/g, '.')
+    .replace(/<ABBR>\s+/g, '. ')
+    .replace(/<ELLIPSIS>/g, '...')
+    .replace(/<URL>(.*?)<\/URL>/g, '$1')
+    .replace(/<EMAIL>(.*?)<\/EMAIL>/g, '$1');
   
   return result.trim();
 }
@@ -57,7 +115,7 @@ function createReferenceMaps(pmDoc) {
         for (const [jatsId, refData] of Object.entries(bibliography)) {
             const key = jatsId.replace(/^ref-/, '').replace(/-nb-article$/, '');
             citeMap.set(jatsId, key);
-            console.log(`Citation map: ${jatsId} -> ${key}`);
+            debugLog(`Citation map: ${jatsId} -> ${key}`);
         }
     }
 
@@ -71,7 +129,7 @@ function createReferenceMaps(pmDoc) {
                     // "fig-plot-nb-article" -> "fig-plot"
                     const key = jatsId.replace(/-nb-article$/, '');
                     figMap.set(jatsId, key);
-                    console.log(`Figure map: ${jatsId} -> ${key}`);
+                    debugLog(`Figure map: ${jatsId} -> ${key}`);
                 }
             });
         }
@@ -280,7 +338,10 @@ function serializeBlock(node, blockMap, refMaps) {
                 if (author.name) yaml += `  - name: ${author.name}\n`;
               });
             }
-            if (pmDoc.attrs.bibliography) yaml += `bibliography: references.bib\n`;
+            // Check if bibliography exists in the node attributes or refMaps
+            if (metadata.bibliography || (refMaps && refMaps.citeMap && refMaps.citeMap.size > 0)) {
+              yaml += `bibliography: references.bib\n`;
+            }
             yaml += '---';
             return yaml;
           }
@@ -395,4 +456,10 @@ if (require.main === module) {
   console.log('Original:', testText);
   console.log('With line breaks:');
   console.log(addLineBreaksAfterSentences(testText));
+  
+  console.log('\nTesting edge cases:');
+  const edgeCaseText = "Dr. Smith lives at 123 Main St. The temperature is 3.14 degrees. Visit https://example.com for more info. Contact john@example.com.";
+  console.log('Original:', edgeCaseText);
+  console.log('With line breaks:');
+  console.log(addLineBreaksAfterSentences(edgeCaseText));
 }
