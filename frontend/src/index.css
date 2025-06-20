@@ -1,11 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  /* Light Mode Palette */
+  --background-primary: #f8f9fa;
+  --background-secondary: #ffffff;
+  --text-primary: #212529;
+  --text-secondary: #6c757d;
+  --border-color: #dee2e6;
+  --shadow-color-soft: rgba(0,0,0,0.05);
+  --accent-primary: #007bff;
+  --accent-primary-hover: #0056b3;
+  --text-on-accent: #ffffff;
+  --accent-highlight-soft: #e0efff; /* For things like comment backgrounds */
+
+  color-scheme: light dark; /* Keep this to allow user agent to derive dark mode */
+  color: var(--text-primary); /* Default text color for light mode */
+  background-color: var(--background-primary); /* Default background for light mode */
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -13,13 +27,36 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Dark Mode Overrides */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background-primary: #1a1a1a; /* Darker background */
+    --background-secondary: #242424; /* Slightly lighter than primary for cards/headers */
+    --text-primary: rgba(255, 255, 255, 0.87); /* Light text for dark backgrounds */
+    --text-secondary: #9e9e9e; /* Lighter gray for secondary text */
+    --border-color: #424242; /* Darker border color */
+    --shadow-color-soft: rgba(255,255,255,0.05);
+    /* Accent colors can remain the same or be adjusted if needed for contrast */
+    /* --accent-primary: #007bff; */
+    /* --accent-primary-hover: #0056b3; */
+    /* --text-on-accent: #ffffff; */
+    --accent-highlight-soft: #2a3f5a; /* Darker highlight for dark mode */
+  }
+  /* Ensure body text and background uses the dark mode variables */
+  body {
+    color: var(--text-primary);
+    background-color: var(--background-primary);
+  }
+}
+
+
 a {
   font-weight: 500;
-  color: #646cff;
+  color: var(--accent-primary);
   text-decoration: inherit;
 }
 a:hover {
-  color: #535bf2;
+  color: var(--accent-primary-hover);
 }
 
 body {
@@ -28,49 +65,48 @@ body {
   place-items: center;
   min-width: 320px;
   min-height: 100vh;
+  background-color: var(--background-primary); /* Ensure body background uses variable */
+  color: var(--text-primary); /* Ensure body text uses variable */
 }
 
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
+  color: var(--text-primary); /* Ensure headings use text-primary */
 }
 
 button {
   border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
+  border: 1px solid var(--accent-primary); /* Changed from transparent */
+  padding: 0.75em 1.5em; /* Adjusted padding */
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: var(--accent-primary); /* Use accent for button background */
+  color: var(--text-on-accent); /* Text on accent color */
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: background-color 0.25s, border-color 0.25s, box-shadow 0.25s; /* Added box-shadow to transition */
 }
 button:hover {
-  border-color: #646cff;
+  background-color: var(--accent-primary-hover); /* Darken button on hover */
+  border-color: var(--accent-primary-hover); /* Match border color on hover */
+  /* box-shadow: 0 2px 4px rgba(0,0,0,0.1); */ /* Optional: subtle shadow on hover */
 }
 button:focus,
 button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  outline: 4px auto -webkit-focus-ring-color; /* Keep default focus outline */
+  background-color: var(--accent-primary-hover); /* Match hover background */
+  border-color: var(--accent-primary-hover); /* Match hover border */
+  /* box-shadow: 0 2px 4px rgba(0,0,0,0.1); */ /* Optional: subtle shadow on focus */
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
+/* Remove the specific light theme overrides for color and background-color as they are now handled by the main :root and dark mode override */
+/* @media (prefers-color-scheme: light) { ... } */
 
 /* Code block styling */
 .ProseMirror pre {
-  background: #f4f4f4;
-  border: 1px solid #ddd;
+  background: var(--background-secondary); /* Use secondary background for code blocks */
+  border: 1px solid var(--border-color); /* Use border color for code blocks */
   border-radius: 4px;
   padding: 1rem;
   margin: 1rem 0;
@@ -78,6 +114,7 @@ button:focus-visible {
   font-family: 'Courier New', Courier, monospace;
   font-size: 0.9rem;
   line-height: 1.4;
+  color: var(--text-primary); /* Ensure text in code blocks is readable */
 }
 
 .ProseMirror pre code {
@@ -88,34 +125,41 @@ button:focus-visible {
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
+  color: inherit; /* Inherit color from parent pre */
 }
 
-/* Citation styling */
+/* Citation styling using new palette */
 .ProseMirror span[data-type="citation"] {
-  background-color: #e3f2fd;
-  border: 1px solid #2196f3;
+  background-color: var(--accent-highlight-soft);
+  border: 1px solid var(--accent-primary);
   border-radius: 3px;
   padding: 2px 6px;
   font-size: 0.9em;
-  color: #1976d2;
+  color: var(--accent-primary);
   cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
 }
 
 .ProseMirror span[data-type="citation"]:hover {
-  background-color: #bbdefb;
+  background-color: var(--accent-primary);
+  color: var(--text-on-accent);
+  border-color: var(--accent-primary-hover);
 }
 
-/* Figure reference styling */
+/* Figure reference styling using new palette (can use same as citation or a secondary accent if defined) */
 .ProseMirror span[data-type="figure-reference"] {
-  background-color: #fff3e0;
-  border: 1px solid #ff9800;
+  background-color: var(--accent-highlight-soft); /* Or a secondary highlight */
+  border: 1px solid var(--accent-primary); /* Or a secondary accent */
   border-radius: 3px;
   padding: 2px 6px;
   font-size: 0.9em;
-  color: #f57c00;
+  color: var(--accent-primary); /* Or a secondary accent */
   cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
 }
 
 .ProseMirror span[data-type="figure-reference"]:hover {
-  background-color: #ffe0b2;
+  background-color: var(--accent-primary); /* Or a secondary accent */
+  color: var(--text-on-accent);
+  border-color: var(--accent-primary-hover); /* Or a secondary accent hover */
 }
