@@ -106,6 +106,10 @@ function CollabEditorPage() {
     extensions: [
       StarterKit.configure({
         link: false,
+        bold: true,
+        italic: true,
+        strike: true,
+        heading: true,
       }),
       Link.configure({
         openOnClick: false,
@@ -118,7 +122,10 @@ function CollabEditorPage() {
       FigureReference,
       CommentMark.configure({
         HTMLAttributes: { class: 'comment-mark' },
-        onCommentClick: (commentId) => setActiveCommentId(commentId),
+        onCommentClick: (id) => {
+          setActiveCommentId(id);
+          // Here you would also scroll the sidebar to the comment
+        },
         activeCommentId: activeCommentId,
       }),
     ],
@@ -162,11 +169,17 @@ function CollabEditorPage() {
       console.log('Editor instance:', editor);
       console.log('Editor is editable:', editor.isEditable);
       console.log('Editor content:', editor.getJSON());
+      console.log('Available commands:', {
+        toggleBold: !!editor.commands.toggleBold,
+        toggleItalic: !!editor.commands.toggleItalic,
+        toggleStrike: !!editor.commands.toggleStrike,
+        toggleHeading: !!editor.commands.toggleHeading,
+      });
     },
     onBeforeCreate: ({ editor }) => {
       console.log('Editor before create');
     },
-  });
+  }, [activeCommentId]);
 
   // Add effect to save when comments change
   useEffect(() => {

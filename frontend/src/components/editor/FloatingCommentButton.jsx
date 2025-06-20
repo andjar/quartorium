@@ -31,7 +31,7 @@ const FloatingCommentButton = ({ onAddComment, editor }) => {
       const y = coords.top - editorRect.top; // Position closer to the selection (reduced from -40)
 
       // Ensure the button stays within the editor bounds
-      const buttonWidth = 120; // Approximate button width
+      const buttonWidth = 400; // Updated to account for all buttons (Add Comment, B, I, S, H1, H2, H3)
       const buttonHeight = 32; // Approximate button height
       
       let adjustedX = x;
@@ -85,7 +85,13 @@ const FloatingCommentButton = ({ onAddComment, editor }) => {
 
   const handleFormatClick = (formatAction) => {
     if (editor) {
-      formatAction();
+      console.log('Format button clicked, executing format action...');
+      try {
+        formatAction();
+        console.log('Format action executed successfully');
+      } catch (error) {
+        console.error('Error executing format action:', error);
+      }
     }
     setIsVisible(false);
   };
@@ -103,12 +109,30 @@ const FloatingCommentButton = ({ onAddComment, editor }) => {
       <button onClick={handleAddComment}>
         💬 Add Comment
       </button>
-      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleBold().run())}>B</button>
-      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleItalic().run())}>I</button>
-      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleStrike().run())}>S</button>
-      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleHeading({ level: 1 }).run())}>H1</button>
-      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleHeading({ level: 2 }).run())}>H2</button>
-      <button onClick={() => handleFormatClick(() => editor.chain().focus().toggleHeading({ level: 3 }).run())}>H3</button>
+      <button onClick={() => handleFormatClick(() => {
+        console.log('Bold button clicked');
+        return editor.chain().focus().toggleBold().run();
+      })}>B</button>
+      <button onClick={() => handleFormatClick(() => {
+        console.log('Italic button clicked');
+        return editor.chain().focus().toggleItalic().run();
+      })}>I</button>
+      <button onClick={() => handleFormatClick(() => {
+        console.log('Strike button clicked');
+        return editor.chain().focus().toggleStrike().run();
+      })}>S</button>
+      <button onClick={() => handleFormatClick(() => {
+        console.log('H1 button clicked');
+        return editor.chain().focus().toggleHeading({ level: 1 }).run();
+      })}>H1</button>
+      <button onClick={() => handleFormatClick(() => {
+        console.log('H2 button clicked');
+        return editor.chain().focus().toggleHeading({ level: 2 }).run();
+      })}>H2</button>
+      <button onClick={() => handleFormatClick(() => {
+        console.log('H3 button clicked');
+        return editor.chain().focus().toggleHeading({ level: 3 }).run();
+      })}>H3</button>
     </div>
   );
 };

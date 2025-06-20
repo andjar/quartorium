@@ -8,14 +8,14 @@
   /* Light Mode Palette */
   --background-primary: #f8f9fa;
   --background-secondary: #ffffff;
+  --border-color: #dee2e6;
+  --shadow-color-soft: rgba(0, 0, 0, 0.05);
   --text-primary: #212529;
   --text-secondary: #6c757d;
-  --border-color: #dee2e6;
-  --shadow-color-soft: rgba(0,0,0,0.05);
   --accent-primary: #007bff;
-  --accent-primary-hover: #0056b3;
+  --accent-primary-hover: #88c4ff;
+  --accent-highlight-soft: #e7f3ff;
   --text-on-accent: #ffffff;
-  --accent-highlight-soft: #e0efff; /* For things like comment backgrounds */
 
   color-scheme: light dark; /* Keep this to allow user agent to derive dark mode */
   color: var(--text-primary); /* Default text color for light mode */
@@ -77,13 +77,13 @@ h1 {
 
 button {
   border-radius: 8px;
-  border: 1px solid var(--accent-primary); /* Changed from transparent */
+  border: 1px solid var(---border-color); /* Changed from transparent */
   padding: 0.75em 1.5em; /* Adjusted padding */
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: var(--accent-primary); /* Use accent for button background */
-  color: var(--text-on-accent); /* Text on accent color */
+  background-color: var(--accent-highlight-soft); /* Use accent for button background */
+  color: var(--text-secondary); /* Text on accent color */
   cursor: pointer;
   transition: background-color 0.25s, border-color 0.25s, box-shadow 0.25s; /* Added box-shadow to transition */
 }
@@ -144,6 +144,19 @@ button:focus-visible {
   background-color: var(--accent-primary);
   color: var(--text-on-accent);
   border-color: var(--accent-primary-hover);
+}
+
+/* Text formatting styles */
+.ProseMirror strong {
+  font-weight: bold;
+}
+
+.ProseMirror em {
+  font-style: italic;
+}
+
+.ProseMirror s {
+  text-decoration: line-through;
 }
 
 /* Figure reference styling using new palette (can use same as citation or a secondary accent if defined) */

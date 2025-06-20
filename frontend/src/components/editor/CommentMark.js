@@ -1,6 +1,7 @@
+// CommentMark.js - Simplified and Correct Version
+
 import { Mark, mergeAttributes } from '@tiptap/core';
 import { Plugin, PluginKey } from 'prosemirror-state';
-import { Decoration, DecorationSet } from 'prosemirror-view';
 
 export const CommentMark = Mark.create({
   name: 'comment',
@@ -8,8 +9,9 @@ export const CommentMark = Mark.create({
   addOptions() {
     return {
       HTMLAttributes: {},
-      onCommentClick: () => {},
-      activeCommentId: null, // new option
+      onCommentClick: (commentId) => {},
+      // This is the only state it needs, passed in as an option
+      activeCommentId: null,
     };
   },
 
@@ -18,97 +20,53 @@ export const CommentMark = Mark.create({
       commentId: {
         default: null,
         parseHTML: element => element.getAttribute('data-comment-id'),
-        renderHTML: attributes => {
-          if (!attributes.commentId) {
-            return {};
-          }
-          return { 'data-comment-id': attributes.commentId };
-        },
+        renderHTML: attributes => ({ 'data-comment-id': attributes.commentId }),
       },
     };
   },
 
   parseHTML() {
-    return [
-      {
-        tag: 'span[data-comment-id]',
-        getAttrs: element => !!element.getAttribute('data-comment-id').trim() && null,
-      },
-    ];
+    return [{ tag: 'span[data-comment-id]' }];
   },
 
+  // This function now correctly reads from `this.options`
   renderHTML({ HTMLAttributes }) {
-    return ['span', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), 0];
+    const activeId = this.options.activeCommentId;
+    const currentId = HTMLAttributes['data-comment-id'];
+
+    let className = 'comment-mark';
+    if (currentId && currentId === activeId) {
+      className += ' comment-mark-active';
+    }
+
+    return ['span', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { class: className }), 0];
   },
 
   addCommands() {
     return {
-      setComment: (commentId) => ({ commands }) => {
-        if (!commentId) {
-          return commands.unsetMark(this.name);
-        }
-        return commands.setMark(this.name, { commentId });
-      },
-      toggleComment: (commentId) => ({ commands }) => {
-        return commands.toggleMark(this.name, { commentId });
-      },
-      unsetComment: () => ({ commands }) => {
-        return commands.unsetMark(this.name);
-      },
+      setComment: (commentId) => ({ commands }) => commands.setMark(this.name, { commentId }),
+      toggleComment: (commentId) => ({ commands }) => commands.toggleMark(this.name, { commentId }),
+      unsetComment: () => ({ commands }) => commands.unsetMark(this.name),
     };
   },
 
+  // The click handler is still correct
   addProseMirrorPlugins() {
-    const self = this; // To access Mark options in plugin
+    const self = this;
     return [
       new Plugin({
         key: new PluginKey('commentClick'),
         props: {
           handleClick: (view, pos, event) => {
-            const { schema } = view.state;
-            // Ensure the node at pos is resolved correctly
-            const $pos = view.state.doc.resolve(pos);
-            // Check marks at the resolved position
-            const marks = $pos.marks();
-            const commentMark = marks.find(m => m.type === schema.marks.comment);
-
-            if (commentMark && commentMark.attrs.commentId && event.target.closest('span[data-comment-id]')) {
-              self.options.onCommentClick(commentMark.attrs.commentId);
+            const attrs = self.editor.getAttributes(self.name);
+            const commentId = attrs.commentId;
+            if (commentId && event.target?.closest('span[data-comment-id]')) {
+              self.options.onCommentClick(commentId);
             }
             return false;
           },
         },
       }),
-      new Plugin({
-        key: new PluginKey('commentHighlight'),
-        state: {
-          init() { return DecorationSet.empty; },
-          apply(tr, oldSet, oldState, newState) {
-            // Access activeCommentId via self.options
-            const activeId = self.options.activeCommentId;
-            if (!activeId) return DecorationSet.empty;
-
-            const decorations = [];
-            newState.doc.descendants((node, pos) => {
-              if (node.isText && node.marks.length > 0) {
-                node.marks.forEach(mark => {
-                  if (mark.type.name === self.name && mark.attrs.commentId === activeId) {
-                    decorations.push(
-                      Decoration.inline(pos, pos + node.nodeSize, { class: 'comment-mark-active' })
-                    );
-                  }
-                });
-              }
-            });
-            return DecorationSet.create(newState.doc, decorations);
-          }
-        },
-        props: {
-          decorations(state) {
-            return this.getState(state);
-          }
-        }
-      })
     ];
   },
 });

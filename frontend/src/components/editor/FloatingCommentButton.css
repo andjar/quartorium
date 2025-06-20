@@ -1,57 +1,70 @@
+/* FloatingCommentButton.css - Refactored for a Muted & Precise Look */
+
 .floating-comment-button {
   position: absolute;
-  z-index: 1000;
+  z-index: 500;
   pointer-events: auto;
-  animation: fadeIn 0.2s ease-in-out;
-  display: flex; /* Add flex display to arrange buttons in a row */
-  gap: 4px; /* Add some space between the buttons */
+  animation: subtleFadeIn 0.15s ease-out;
+  display: flex;
+  gap: 6px; /* A little space between buttons */
+  user-select: none;
 }
 
+/* --- KEY CHANGE: Muted, squared button style --- */
 .floating-comment-button button {
-  background-color: var(--accent-primary);
-  color: var(--text-on-accent);
-  border: none; /* Keeping border: none; as per instruction */
-  border-radius: 16px; /* Adjusted border-radius */
-  padding: 8px 12px; /* Adjusted padding for smaller buttons */
-  font-size: 14px;
-  font-weight: 500;
-  font-family: inherit; /* Ensure 'Inter' is inherited */
+  background-color: var(--background-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px; /* Squared-off with soft corners */
+  padding: 5px 10px; /* More compact */
+  font-size: 13px; /* Smaller font */
+  font-weight: 500; /* Lighter weight */
+  font-family: inherit;
   cursor: pointer;
-  box-shadow: 0 2px 8px var(--shadow-color-soft); /* Updated box-shadow */
-  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); /* Softer shadow */
+  transition: background-color 0.15s ease, border-color 0.15s ease; /* No transform */
   white-space: nowrap;
   display: flex;
   align-items: center;
-  justify-content: center; /* Center content within buttons */
-  gap: 6px;
+  gap: 5px;
 }
 
+/* --- KEY CHANGE: Subtle hover, no movement --- */
 .floating-comment-button button:hover {
+  background-color: var(--background-primary);
+  border-color: #adb5bd; /* Slightly darker border on hover */
+}
+
+.floating-comment-button button.primary {
+  background-color: var(--accent-primary);
+  color: var(--text-on-accent);
+  border-color: var(--accent-primary);
+}
+
+.floating-comment-button button.primary:hover {
   background-color: var(--accent-primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--shadow-color-soft); /* Updated box-shadow on hover */
+  border-color: var(--accent-primary-hover);
 }
 
 .floating-comment-button button:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 6px var(--shadow-color-soft); /* Adjusted box-shadow on active */
+  background-color: var(--border-color); /* Feedback on click */
 }
 
-@keyframes fadeIn {
+/* --- KEY CHANGE: Less "explosive" animation --- */
+@keyframes subtleFadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.95);
+    transform: translateY(4px); /* Shorter distance */
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
-/* Ensure the button doesn't interfere with text selection */
-.floating-comment-button {
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-} 
+/* 
+  Note on positioning: 
+  The final distance from the text is set by your JavaScript logic that calculates
+  the 'top' and 'left' properties. To get the button even closer, you may need
+  to subtract a few pixels from the calculated 'top' position in your JS.
+*/

@@ -135,78 +135,110 @@ function CommentSidebar({ comments, setComments, activeCommentId, onCommentSelec
         </button>
       </div>
       {!isCollapsed && (
-        <>
-          {comments.map((comment) => (
-            <div
-              key={comment.id}
-              className={`comment-item ${comment.id === activeCommentId ? 'active' : ''} comment-status-${comment.status}`}
-              onClick={() => onCommentSelect(comment.id)} // Keep selecting comment on click
-            >
-              <div className="comment-header">
-                <span><strong>Author:</strong> {comment.author === currentUser.id ? currentUser.name : comment.author}</span>
-                <small>Timestamp: {new Date(comment.timestamp).toLocaleString()}</small>
-              </div>
-              
-              {/* Show textarea for new comments with empty threads */}
-              {comment.isNew && (!comment.thread || comment.thread.length === 0) ? (
-                <div className="new-comment-input-area" onClick={e => e.stopPropagation()}>
-                  <textarea
-                    ref={(el) => textareaRefs.current[comment.id] = el}
-                    placeholder="Write your comment here..."
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                        e.preventDefault();
-                        submitInitialComment(comment.id, e.target.value);
-                      }
-                    }}
-                  />
-                  <div className="new-comment-buttons">
-                    <button 
-                      className="save-button"
-                      onClick={() => submitInitialComment(comment.id, textareaRefs.current[comment.id]?.value || '')}
-                    >
-                      Save
-                    </button>
-                    <button 
-                      className="cancel-button"
-                      onClick={() => cancelNewComment(comment.id)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="comment-thread">
-                  {comment.thread && comment.thread.map((message, index) => (
-                    <div key={index} className="comment-message">
-                      <p>{message.text}</p>
-                      <small>By: {message.author === currentUser.id ? currentUser.name : message.author} at {new Date(message.timestamp).toLocaleTimeString()}</small>
+        <div className="comment-list">
+          {comments.map((comment) => {
+            // Separate the first message from the subsequent replies
+            const firstMessage = comment.thread?.[0];
+            const replies = comment.thread?.slice(1) || [];
+  
+            return (
+              <div
+                key={comment.id}
+                className={`comment-item ${comment.id === activeCommentId ? 'active' : ''} comment-status-${comment.status}`}
+                onClick={() => onCommentSelect(comment.id)}
+              >
+                {/* === Case 1: This is a brand new, empty comment === */}
+                {comment.isNew && !firstMessage ? (
+                  <div className="new-comment-input-area" onClick={e => e.stopPropagation()}>
+                    <textarea
+                      ref={(el) => textareaRefs.current[comment.id] = el}
+                      placeholder="Add a comment..."
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          submitInitialComment(comment.id, e.target.value);
+                        }
+                      }}
+                    />
+                    <div className="new-comment-buttons">
+                      <button 
+                        className="save-button"
+                        onClick={() => submitInitialComment(comment.id, textareaRefs.current[comment.id]?.value || '')}
+                      >
+                        Comment
+                      </button>
+                      <button 
+                        className="cancel-button"
+                        onClick={() => cancelNewComment(comment.id)}
+                      >
+                        Cancel
+                      </button>
                     </div>
-                  ))}
-                </div>
-              )}
-              
-              <div className="comment-actions">
-                <button onClick={(e) => { e.stopPropagation(); toggleResolveComment(comment.id); }}>
-                  {comment.status === 'open' ? 'Resolve' : 'Reopen'}
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); setShowReplyInput(prev => ({ ...prev, [comment.id]: !prev[comment.id]})); }}>
-                  Reply
-                </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* === Case 2: This is an existing comment thread === */}
+                    {/* Render the first message prominently */}
+                    {firstMessage && (
+                      <div className="comment-main">
+                        <div className="comment-meta">
+                          <strong>{firstMessage.author === currentUser.id ? currentUser.name : firstMessage.author}</strong>
+                          <span> at {new Date(firstMessage.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+                        <div className="comment-body">
+                          <p>{firstMessage.text}</p>
+                        </div>
+                      </div>
+                    )}
+  
+                    {/* Render replies, if they exist */}
+                    {replies.length > 0 && (
+                      <div className="comment-thread">
+                        {replies.map((reply, index) => (
+                          <div key={index} className="comment-reply">
+                            <div className="comment-meta">
+                              <strong>{reply.author === currentUser.id ? currentUser.name : reply.author}</strong>
+                              <span> at {new Date(firstMessage.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                            </div>
+                            <div className="comment-body">
+                              <p>{reply.text}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+  
+                    {/* Render actions and the reply input area */}
+                    <div className="comment-actions" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => setShowReplyInput(prev => ({ ...prev, [comment.id]: !prev[comment.id]}))}>
+                        Reply
+                      </button>
+                      <button onClick={() => toggleResolveComment(comment.id)}>
+                        {comment.status === 'open' ? 'Resolve' : 'Reopen'}
+                      </button>
+                    </div>
+  
+                    {showReplyInput[comment.id] && (
+                      <div className="reply-input-area" onClick={e => e.stopPropagation()}>
+                        <textarea
+                          value={replyText[comment.id] || ''}
+                          onChange={(e) => handleReplyChange(comment.id, e.target.value)}
+                          placeholder="Write a reply..."
+                          autoFocus
+                        />
+                        <div className="reply-input-buttons">
+                          <button className="save-button" onClick={() => submitReply(comment.id)}>
+                            Reply
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
-              {showReplyInput[comment.id] && (
-                <div className="reply-input-area" onClick={e => e.stopPropagation()}>
-                  <textarea
-                    value={replyText[comment.id] || ''}
-                    onChange={(e) => handleReplyChange(comment.id, e.target.value)}
-                    placeholder="Write a reply..."
-                  />
-                  <button onClick={(e) => { e.stopPropagation(); submitReply(comment.id); }}>Add Reply</button>
-                </div>
-              )}
-            </div>
-          ))}
-        </>
+            )
+          })}
+        </div>
       )}
     </aside>
   );
