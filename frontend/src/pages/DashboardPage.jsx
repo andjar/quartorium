@@ -166,7 +166,7 @@ function DashboardPage() {
                     {qmdFiles.map((file) => (
                       <li key={file} className="dashboard-file-item">
                         <Link 
-                          to={`/editor?repoId=${selectedRepo.id}&filepath=${encodeURIComponent(file)}`}
+                          to={`/editor/${selectedRepo.id}/${encodeURIComponent(file)}`}
                           className="dashboard-file-link"
                         >
                           {file}

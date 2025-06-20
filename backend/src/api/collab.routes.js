@@ -37,24 +37,52 @@ router.get('/:shareToken', async (req, res) => {
       });
     });
 
-    // 2. Check if there are any unsaved changes in live_documents
-    const liveDoc = await new Promise((resolve, reject) => {
-      // Updated SELECT query to include comments_json
-      db.get('SELECT prosemirror_json, base_commit_hash, comments_json FROM live_documents WHERE share_token = ?', [shareToken], (err, row) => {
-        if (err) {
-          console.error('Error checking live_documents:', err.message);
-          resolve(null); // Continue with branch rendering if there's a DB error
-        } else {
-          resolve(row);
-        }
+    // 2. Find all share links for this document to check all possible live docs.
+    const allShareLinks = await new Promise((resolve, reject) => {
+      const sql = `SELECT share_token FROM share_links WHERE doc_id = ?`;
+      db.all(sql, [linkInfo.doc_id], (err, rows) => {
+        if (err) return reject(new Error('Could not query for sibling share links.'));
+        resolve(rows.map(r => r.share_token));
       });
     });
 
-    // 3. If we have unsaved changes, return them
+    // 3. Check if there are any recent, meaningful, unsaved changes from ANY collaborator.
+    let liveDoc = null;
+    if (allShareLinks.length > 0) {
+      liveDoc = await new Promise((resolve, reject) => {
+        const placeholders = allShareLinks.map(() => '?').join(',');
+        const sql = `
+          SELECT prosemirror_json, base_commit_hash, comments_json, share_token 
+          FROM live_documents 
+          WHERE share_token IN (${placeholders}) 
+          ORDER BY updated_at DESC
+        `;
+        db.all(sql, allShareLinks, (err, rows) => {
+          if (err) {
+            console.error('Error checking live_documents for all collaborators:', err.message);
+            return resolve(null);
+          }
+          
+          // Find the first meaningful document
+          const meaningfulDoc = rows.find(row => {
+            try {
+              const pmJson = JSON.parse(row.prosemirror_json);
+              return pmJson.content && Array.isArray(pmJson.content) && pmJson.content.length > 0 &&
+                     (pmJson.content.length > 1 || (pmJson.content[0].content && pmJson.content[0].content.length > 0));
+            } catch {
+              return false;
+            }
+          });
+          resolve(meaningfulDoc || null);
+        });
+      });
+    }
+    
+    // 4. If we have unsaved changes, return them
     if (liveDoc) {
-      console.log(`Returning unsaved changes for shareToken ${shareToken}`);
+      console.log(`Returning unsaved changes from token ${liveDoc.share_token} for ${linkInfo.collaborator_label}`);
       let prosemirrorJson;
-      let comments = []; // Default to empty array for comments
+      let comments = [];
 
       try {
         prosemirrorJson = JSON.parse(liveDoc.prosemirror_json);
@@ -62,21 +90,21 @@ router.get('/:shareToken', async (req, res) => {
           comments = JSON.parse(liveDoc.comments_json);
         }
       } catch (e) {
-        console.error('Failed to parse stored JSON (ProseMirror or comments):', e);
-        // Fall through to branch rendering if parsing fails, prosemirrorJson might be null
+        console.error('Failed to parse stored JSON from live doc, rendering from branch instead:', e);
+        // Fall through to branch rendering
       }
-      
-      if (prosemirrorJson) { // Only return if prosemirrorJson is valid
+
+      if (prosemirrorJson) {
         return res.json({ 
           prosemirrorJson: prosemirrorJson, 
-          comments: comments, // Include comments in the response
+          comments: comments,
           currentCommitHash: liveDoc.base_commit_hash,
-          collaboratorLabel: linkInfo.collaborator_label || null // Include collaborator label
+          collaboratorLabel: linkInfo.collaborator_label || null
         });
       }
     }
 
-    // 4. If no unsaved changes (or live doc parsing failed), render from the collaboration branch
+    // 5. If no unsaved changes, render from the collaboration branch
     console.log(`No valid unsaved changes found for shareToken ${shareToken}, rendering from branch`);
     
     // Check out the specific collaboration branch
@@ -386,4 +414,447 @@ router.post('/:shareToken/commit-qmd', async (req, res) => {
   }
 });
 
+// POST /api/collab/:shareToken/track-comment - Track when a comment is added
+router.post('/:shareToken/track-comment', async (req, res) => {
+  const { shareToken } = req.params;
+  const { collaboratorLabel } = req.body;
+
+  try {
+    // Get share link information
+    const linkInfo = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT s.*, d.filepath, r.id as repoId, r.full_name, s.collaborator_label
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.share_token = ?
+      `;
+      db.get(sql, [shareToken], (err, row) => {
+        if (err || !row) return reject(new Error('Invalid share link.'));
+        resolve(row);
+      });
+    });
+
+    // Update the live_documents table to indicate a comment was added
+    await new Promise((resolve, reject) => {
+      const sql = `
+        UPDATE live_documents 
+        SET updated_at = CURRENT_TIMESTAMP 
+        WHERE share_token = ?
+      `;
+      db.run(sql, [shareToken], function(err) {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+
+    res.json({ message: 'Comment tracked successfully' });
+
+  } catch (error) {
+    console.error('Error tracking comment:', error);
+    res.status(500).json({ error: error.message || 'Failed to track comment.' });
+  }
+});
+
+// Branch locking endpoints
+// POST /api/collab/:shareToken/lock - Acquire a lock on the collaboration branch
+router.post('/:shareToken/lock', async (req, res) => {
+  const { shareToken } = req.params;
+  const { collaboratorLabel, lockDuration = 30 } = req.body; // lockDuration in minutes
+
+  try {
+    // Get share link information
+    const linkInfo = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT s.*, d.filepath, r.id as repoId, r.full_name, s.collaborator_label
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.share_token = ?
+      `;
+      db.get(sql, [shareToken], (err, row) => {
+        if (err || !row) return reject(new Error('Invalid share link.'));
+        resolve(row);
+      });
+    });
+
+    // Check if branch is already locked by someone else
+    const existingLock = await new Promise((resolve) => {
+      const sql = `
+        SELECT * FROM branch_locks 
+        WHERE repo_id = ? AND branch_name = ? AND is_active = 1 
+        AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+        AND locked_by_collaborator_label != ?
+      `;
+      db.get(sql, [linkInfo.repoId, linkInfo.collab_branch_name, collaboratorLabel], (err, row) => {
+        if (err) resolve(null);
+        else resolve(row);
+      });
+    });
+
+    if (existingLock) {
+      const lockInfo = {
+        lockedBy: existingLock.locked_by_collaborator_label || 'Unknown',
+        lockedAt: existingLock.locked_at,
+        expiresAt: existingLock.expires_at
+      };
+      return res.status(409).json({ 
+        error: 'Branch is already locked', 
+        lockInfo 
+      });
+    }
+
+    // Check if this collaborator already has a lock
+    const myExistingLock = await new Promise((resolve) => {
+      const sql = `
+        SELECT * FROM branch_locks 
+        WHERE repo_id = ? AND branch_name = ? AND is_active = 1 
+        AND locked_by_collaborator_label = ?
+      `;
+      db.get(sql, [linkInfo.repoId, linkInfo.collab_branch_name, collaboratorLabel], (err, row) => {
+        if (err) resolve(null);
+        else resolve(row);
+      });
+    });
+
+    // If I already have a lock, extend it
+    if (myExistingLock) {
+      const expiresAt = new Date(Date.now() + lockDuration * 60 * 1000).toISOString();
+      await new Promise((resolve, reject) => {
+        const sql = `
+          UPDATE branch_locks 
+          SET expires_at = ?, locked_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `;
+        db.run(sql, [expiresAt, myExistingLock.id], function(err) {
+          if (err) return reject(err);
+          resolve(this.changes);
+        });
+      });
+
+      return res.json({ 
+        message: 'Branch lock extended successfully',
+        expiresAt,
+        lockDuration
+      });
+    }
+
+    // Create new lock
+    const expiresAt = new Date(Date.now() + lockDuration * 60 * 1000).toISOString();
+    await new Promise((resolve, reject) => {
+      const sql = `
+        INSERT INTO branch_locks 
+        (repo_id, branch_name, locked_by_collaborator_label, expires_at, is_active) 
+        VALUES (?, ?, ?, ?, 1)
+      `;
+      db.run(sql, [linkInfo.repoId, linkInfo.collab_branch_name, collaboratorLabel, expiresAt], function(err) {
+        if (err) return reject(err);
+        resolve(this.lastID);
+      });
+    });
+
+    res.json({ 
+      message: 'Branch locked successfully',
+      expiresAt,
+      lockDuration
+    });
+
+  } catch (error) {
+    console.error('Error acquiring branch lock:', error);
+    res.status(500).json({ error: error.message || 'Failed to acquire lock.' });
+  }
+});
+
+// DELETE /api/collab/:shareToken/lock - Release a lock on the collaboration branch
+router.delete('/:shareToken/lock', async (req, res) => {
+  const { shareToken } = req.params;
+  const { collaboratorLabel } = req.body;
+
+  try {
+    // Get share link information
+    const linkInfo = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT s.*, d.filepath, r.id as repoId, r.full_name, s.collaborator_label
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.share_token = ?
+      `;
+      db.get(sql, [shareToken], (err, row) => {
+        if (err || !row) return reject(new Error('Invalid share link.'));
+        resolve(row);
+      });
+    });
+
+    // Check if the lock belongs to this collaborator
+    const existingLock = await new Promise((resolve) => {
+      const sql = `
+        SELECT * FROM branch_locks 
+        WHERE repo_id = ? AND branch_name = ? AND is_active = 1
+        AND locked_by_collaborator_label = ?
+      `;
+      db.get(sql, [linkInfo.repoId, linkInfo.collab_branch_name, collaboratorLabel], (err, row) => {
+        if (err) resolve(null);
+        else resolve(row);
+      });
+    });
+
+    if (!existingLock) {
+      return res.status(404).json({ error: 'No active lock found for this collaborator.' });
+    }
+
+    // Release the lock
+    await new Promise((resolve, reject) => {
+      const sql = `UPDATE branch_locks SET is_active = 0 WHERE id = ?`;
+      db.run(sql, [existingLock.id], function(err) {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+
+    res.json({ message: 'Branch lock released successfully' });
+
+  } catch (error) {
+    console.error('Error releasing branch lock:', error);
+    res.status(500).json({ error: error.message || 'Failed to release lock.' });
+  }
+});
+
+// GET /api/collab/:shareToken/lock-status - Get current lock status
+router.get('/:shareToken/lock-status', async (req, res) => {
+  const { shareToken } = req.params;
+  const { collaboratorLabel } = req.query; // Get collaborator label from query params
+
+  try {
+    // Get share link information
+    const linkInfo = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT s.*, d.filepath, r.id as repoId, r.full_name, s.collaborator_label
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.share_token = ?
+      `;
+      db.get(sql, [shareToken], (err, row) => {
+        if (err || !row) return reject(new Error('Invalid share link.'));
+        resolve(row);
+      });
+    });
+
+    // Get all active locks for this branch
+    const activeLocks = await new Promise((resolve) => {
+      const sql = `
+        SELECT * FROM branch_locks 
+        WHERE repo_id = ? AND branch_name = ? AND is_active = 1 
+        AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+        ORDER BY locked_at DESC
+      `;
+      db.all(sql, [linkInfo.repoId, linkInfo.collab_branch_name], (err, rows) => {
+        if (err || !rows) resolve([]);
+        else resolve(rows);
+      });
+    });
+
+    // Clean up any expired locks
+    const now = new Date();
+    const validLocks = activeLocks.filter(lock => {
+      if (lock.expires_at) {
+        const expiresAt = new Date(lock.expires_at);
+        if (now > expiresAt) {
+          // Clean up the expired lock
+          db.run('UPDATE branch_locks SET is_active = 0 WHERE id = ?', [lock.id], (err) => {
+            if (err) console.error('Error cleaning up expired lock:', err.message);
+          });
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // Find my lock if I have one
+    const myLock = validLocks.find(lock => lock.locked_by_collaborator_label === collaboratorLabel);
+    
+    // Find other people's locks
+    const otherLocks = validLocks.filter(lock => lock.locked_by_collaborator_label !== collaboratorLabel);
+
+    // Determine lock status
+    let isLocked = false;
+    let lockInfo = null;
+    let isLockedByMe = false;
+
+    if (myLock) {
+      // I have a lock
+      isLocked = true;
+      isLockedByMe = true;
+      lockInfo = {
+        lockedBy: myLock.locked_by_collaborator_label,
+        lockedAt: myLock.locked_at,
+        expiresAt: myLock.expires_at
+      };
+    } else if (otherLocks.length > 0) {
+      // Someone else has a lock
+      isLocked = true;
+      isLockedByMe = false;
+      lockInfo = {
+        lockedBy: otherLocks[0].locked_by_collaborator_label,
+        lockedAt: otherLocks[0].locked_at,
+        expiresAt: otherLocks[0].expires_at
+      };
+    }
+
+    res.json({ 
+      isLocked,
+      isLockedByMe,
+      lockInfo,
+      allLocks: validLocks.map(lock => ({
+        lockedBy: lock.locked_by_collaborator_label,
+        lockedAt: lock.locked_at,
+        expiresAt: lock.expires_at
+      }))
+    });
+
+  } catch (error) {
+    console.error('Error getting lock status:', error);
+    res.status(500).json({ error: error.message || 'Failed to get lock status.' });
+  }
+});
+
+// GET /api/collab/:shareToken/recent-changes - Get recent changes from all collaborators
+router.get('/:shareToken/recent-changes', async (req, res) => {
+  const { shareToken } = req.params;
+  const { since } = req.query; // Optional timestamp to get changes since a specific time
+
+  try {
+    // Get share link information
+    const linkInfo = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT s.*, d.filepath, r.id as repoId, r.full_name, s.collaborator_label
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.share_token = ?
+      `;
+      db.get(sql, [shareToken], (err, row) => {
+        if (err || !row) return reject(new Error('Invalid share link.'));
+        resolve(row);
+      });
+    });
+
+    // Get all share links for the same document
+    const allShareLinks = await new Promise((resolve) => {
+      const sql = `
+        SELECT s.*, r.full_name
+        FROM share_links s 
+        JOIN repositories r ON s.repo_id = r.id 
+        WHERE s.doc_id = (SELECT doc_id FROM share_links WHERE share_token = ?)
+        AND s.share_token != ?
+      `;
+      db.all(sql, [shareToken, shareToken], (err, rows) => {
+        if (err) resolve([]);
+        else resolve(rows);
+      });
+    });
+
+    // Get live changes from all collaborators
+    const liveChanges = await new Promise((resolve) => {
+      const sql = `
+        SELECT ld.*, sl.collaborator_label, sl.share_token
+        FROM live_documents ld
+        JOIN share_links sl ON ld.share_token = sl.share_token
+        WHERE sl.doc_id = (SELECT doc_id FROM share_links WHERE share_token = ?)
+        AND ld.share_token != ?
+        ${since ? 'AND ld.updated_at > ?' : ''}
+        ORDER BY ld.updated_at DESC
+      `;
+      const params = since ? [shareToken, shareToken, since] : [shareToken, shareToken];
+      db.all(sql, params, (err, rows) => {
+        if (err) resolve([]);
+        else resolve(rows);
+      });
+    });
+
+    // Get recent commits from all collaboration branches
+    const recentCommits = [];
+    for (const link of allShareLinks) {
+      try {
+        const projectDir = path.join(REPOS_DIR, link.full_name);
+        
+        // Get recent commits from this collaborator's branch
+        const commits = await git.log({
+          fs: fsForGit,
+          dir: projectDir,
+          ref: link.collab_branch_name,
+          depth: 5 // Get last 5 commits
+        });
+
+        commits.forEach(commit => {
+          recentCommits.push({
+            hash: commit.oid,
+            message: commit.commit.message,
+            author: commit.commit.author.name,
+            timestamp: new Date(commit.commit.author.timestamp * 1000).toISOString(),
+            collaboratorLabel: link.collaborator_label,
+            branchName: link.collab_branch_name
+          });
+        });
+      } catch (error) {
+        console.error(`Error getting commits for ${link.collab_branch_name}:`, error.message);
+      }
+    }
+
+    // Sort commits by timestamp
+    recentCommits.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    res.json({
+      liveChanges: liveChanges.map(change => ({
+        collaboratorLabel: change.collaborator_label,
+        updatedAt: change.updated_at,
+        hasUnsavedChanges: true
+      })),
+      recentCommits: recentCommits.slice(0, 10), // Return last 10 commits
+      lastUpdated: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error getting recent changes:', error);
+    res.status(500).json({ error: error.message || 'Failed to get recent changes.' });
+  }
+});
+
+// GET /api/collab/:shareToken/info - Get share link information
+router.get('/:shareToken/info', async (req, res) => {
+  const { shareToken } = req.params;
+
+  try {
+    // Get share link information
+    const linkInfo = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT s.*, d.filepath, r.id as repoId, r.full_name, s.collaborator_label
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.share_token = ?
+      `;
+      db.get(sql, [shareToken], (err, row) => {
+        if (err || !row) return reject(new Error('Invalid share link.'));
+        console.log('Share link info for /info endpoint:', row);
+        resolve(row);
+      });
+    });
+
+    res.json({
+      shareToken: linkInfo.share_token,
+      collaboratorLabel: linkInfo.collaborator_label,
+      collabBranchName: linkInfo.collab_branch_name,
+      filepath: linkInfo.filepath,
+      repoName: linkInfo.full_name
+    });
+
+  } catch (error) {
+    console.error('Error getting share link info:', error);
+    res.status(404).json({ error: error.message });
+  }
+});
+
 module.exports = router;
+

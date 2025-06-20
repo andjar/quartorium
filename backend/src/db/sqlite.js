@@ -164,6 +164,69 @@ const createLiveDocumentsTable = () => {
 
 createLiveDocumentsTable();
 
+// Create the branch_locks table for collaboration locking
+const createBranchLocksTable = () => {
+  const sql = `
+    CREATE TABLE IF NOT EXISTS branch_locks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_id INTEGER NOT NULL,
+      branch_name TEXT NOT NULL,
+      locked_by_user_id INTEGER,
+      locked_by_collaborator_label TEXT,
+      locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      expires_at TIMESTAMP,
+      is_active BOOLEAN DEFAULT 1,
+      FOREIGN KEY (repo_id) REFERENCES repositories (id)
+    )
+  `;
+  db.run(sql, (err) => {
+    if (err) {
+      console.error('Error creating branch_locks table:', err.message);
+    } else {
+      console.log('✅ Branch locks table is ready.');
+      
+      // Create indexes for better performance
+      const indexSql = `
+        CREATE INDEX IF NOT EXISTS idx_branch_locks_repo_branch 
+        ON branch_locks (repo_id, branch_name, is_active)
+      `;
+      db.run(indexSql, (indexErr) => {
+        if (indexErr) {
+          console.error('Error creating branch_locks index:', indexErr.message);
+        } else {
+          console.log('✅ Branch locks index is ready.');
+        }
+      });
+    }
+  });
+};
+
+createBranchLocksTable();
+
+// Function to clean up expired locks
+const cleanupExpiredLocks = () => {
+  const sql = `
+    UPDATE branch_locks 
+    SET is_active = 0 
+    WHERE is_active = 1 
+    AND expires_at IS NOT NULL 
+    AND expires_at < CURRENT_TIMESTAMP
+  `;
+  db.run(sql, (err) => {
+    if (err) {
+      console.error('Error cleaning up expired locks:', err.message);
+    } else {
+      console.log('✅ Cleaned up expired locks');
+    }
+  });
+};
+
+// Clean up expired locks every 5 minutes
+setInterval(cleanupExpiredLocks, 5 * 60 * 1000);
+
+// Initial cleanup
+cleanupExpiredLocks();
+
 // Migration function to add main_branch column to existing repositories
 const migrateReposTable = () => {
   // Check if main_branch column exists

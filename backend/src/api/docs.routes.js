@@ -10,6 +10,7 @@ const { v4: actualUuidv4 } = require('uuid');
 // const { renderToJATS, jatsToProseMirrorJSON } = require('../core/astParser'); // No longer needed for view
 // const { parseQmd } = require('../core/qmdBlockParser'); // No longer needed for view
 const { qmdToProseMirror } = require('../core/quartoParser'); // Import new parser
+const { extractCommentsAppendix } = require('../core/commentUtils'); // Import comment utilities
 const Diff = require('diff');
 const { ensureAuthenticated } = require('../core/auth');
 
@@ -18,6 +19,12 @@ const REPOS_DIR_path = actualPath.join(__dirname, '../../repos'); // Renamed for
 const CACHE_DIR = actualPath.join(__dirname, '../../cache/rendered_docs');
 
 const isAuthenticated = (req, res, next) => {
+  console.log('Auth check:', { 
+    isAuthenticated: req.isAuthenticated(), 
+    user: req.user, 
+    session: req.session,
+    cookies: req.headers.cookie 
+  });
   if (req.isAuthenticated()) return next();
   res.status(401).json({ error: 'User not authenticated' });
 };
@@ -108,7 +115,12 @@ router.get('/view', async (req, res) => {
         const cachedContent = await actualFs.readFile(cacheFilename, 'utf8');
         const parsedCache = JSON.parse(cachedContent); // Cache now stores { prosemirrorJson, comments }
         console.log(`[Cache HIT] Serving ${effectiveFilepath} for repo ${effectiveRepoId} (commit ${currentCommitHash.substring(0,7)}) from cache.`);
-        return res.json(parsedCache); // Return the full cached object
+        // Include currentCommitHash in cached response
+        const cachedResponse = { 
+          ...parsedCache, 
+          currentCommitHash: currentCommitHash 
+        };
+        return res.json(cachedResponse); // Return the full cached object with currentCommitHash
       } catch (cacheReadError) {
         if (cacheReadError.code !== 'ENOENT') { // ENOENT is expected for a cache miss
           console.warn(`[Cache Read WARN] Error reading cache file ${cacheFilename}:`, cacheReadError);
@@ -155,7 +167,13 @@ router.get('/view', async (req, res) => {
     }
     // --- END CACHE WRITE LOGIC ---
     
-    res.json(resultPayload); // Return the payload { prosemirrorJson, comments }
+    // Include currentCommitHash in the response
+    const responsePayload = { 
+      ...resultPayload, 
+      currentCommitHash: currentCommitHash || null 
+    };
+    
+    res.json(responsePayload); // Return the payload { prosemirrorJson, comments, currentCommitHash }
 
   } catch (error) {
     console.error('Error getting document view:', error.message, error.stack); // Added error.stack for more details
@@ -173,23 +191,15 @@ router.get('/view', async (req, res) => {
 // router.post('/share', async (req, res) => {
 function shareRouteLogic(db, git, uuidGenerator, projectBaseDir, fsForGit) {
   return async (req, res) => {
-    const { repoId, filepath, label, userId, branchName } = req.body; // Added userId and branchName
+    const { repoId, filepath, label, userId, branchName, collaborationMode = 'individual' } = req.body;
+    const actualUserId = userId || req.user.id; // Use provided userId or fall back to authenticated user
 
-    // Updated validation: label is optional, userId and branchName are now required.
-    if (!repoId || !filepath || !userId || !branchName) {
-      return res.status(400).json({ error: 'repoId, filepath, userId, and branchName are required.' });
+    if (!repoId || !filepath || !label || !actualUserId || !branchName) {
+      return res.status(400).json({ error: 'Missing required fields: repoId, filepath, label, userId, branchName' });
     }
-
-    // It's good practice to also validate that req.user.id matches the provided userId
-    // or that the authenticated user has permission to act on behalf of userId if they are different.
-    // For this task, we'll assume req.user.id is the correct userId to use or has been validated.
-    // If your auth setup ensures req.user.id is the one to use, prefer it over a userId from body.
-    // For now, we'll use the userId from the body as per instruction, but acknowledge req.user.id exists.
-    const actualUserId = userId; // Or potentially: req.user.id;
 
     try {
       // 1. Verify user (from token) owns the repo.
-      // The userId in the request body should ideally match req.user.id or be handled by specific admin permissions.
       const repo = await new Promise((resolve, reject) => {
         db.get('SELECT * FROM repositories WHERE id = ? AND user_id = ?', [repoId, req.user.id], (err, row) => {
           if (err || !row) return reject(new Error('Repo not found or access denied for the authenticated user.'));
@@ -198,7 +208,7 @@ function shareRouteLogic(db, git, uuidGenerator, projectBaseDir, fsForGit) {
       });
 
       // 2. Find or create the document record
-      let doc = await new Promise((resolve, reject) => { // Added reject for error handling
+      let doc = await new Promise((resolve, reject) => {
           db.get('SELECT * FROM documents WHERE repo_id = ? AND filepath = ?', [repoId, filepath], (err, row) => {
             if (err) return reject(err);
             resolve(row);
@@ -213,59 +223,73 @@ function shareRouteLogic(db, git, uuidGenerator, projectBaseDir, fsForGit) {
           });
       }
 
-      // 3. Use the provided branchName as collab_branch_name.
-      // In a real-world scenario, ensure branchName is valid and doesn't conflict.
-      // For example, check if it exists, sanitize it, or append a unique ID if it's a new branch.
-      // isomorphic-git's branch command will fail if the branch already exists, providing some safety.
+      // 3. Handle branch creation based on collaboration mode
       const collab_branch_name = branchName;
       const projectDir = actualPath.join(projectBaseDir, repo.full_name);
       
-      try {
-        // Attempt to create the branch. This might fail if it already exists.
-        // If it's an existing branch selected by the user, this step should ideally be skipped or handled gracefully.
-        // For now, we assume if a new branchName is provided, it should be created.
-        // If an existing branchName is provided, this might throw an error if not handled.
-        // A more robust solution would check if branchName is "new" or "existing" from frontend,
-        // or try to fetch the branch first.
-        
-        // Check if branch already exists locally
-        const existingBranches = await git.listBranches({
-          fs: fsForGit,
-          dir: projectDir
-        });
-        
-        const branchExists = existingBranches.includes(collab_branch_name);
-        
-        if (!branchExists) {
-          // Create new branch from main branch
-          await git.branch({ 
-            fs: fsForGit, 
-            dir: projectDir, 
-            ref: collab_branch_name, 
-            checkout: false 
+      if (collaborationMode === 'individual') {
+        // For individual mode, ensure each collaborator gets a unique branch
+        try {
+          const existingBranches = await git.listBranches({
+            fs: fsForGit,
+            dir: projectDir
           });
           
-          console.log(`Branch ${collab_branch_name} created locally for repo ${repo.full_name}`);
-        } else {
-          console.log(`Branch ${collab_branch_name} already exists locally for repo ${repo.full_name}`);
+          const branchExists = existingBranches.includes(collab_branch_name);
+          
+          if (!branchExists) {
+            await git.branch({ 
+              fs: fsForGit, 
+              dir: projectDir, 
+              ref: collab_branch_name, 
+              checkout: false 
+            });
+            console.log(`Branch ${collab_branch_name} created locally for repo ${repo.full_name}`);
+          } else {
+            console.log(`Branch ${collab_branch_name} already exists locally for repo ${repo.full_name}`);
+          }
+        } catch (branchError) {
+          console.warn(`Warning creating branch ${collab_branch_name}: ${branchError.message}`);
         }
-      } catch (branchError) {
-        // If the error is because the branch already exists, we can ignore it if that's the desired behavior
-        // for selecting an existing branch. Otherwise, this is a legitimate error.
-        // For this subtask, we'll log it and proceed, assuming the frontend might send existing branch names.
-        console.warn(`Warning creating branch ${collab_branch_name}: ${branchError.message}. This might be okay if the branch is intended to be an existing one.`);
+      } else if (collaborationMode === 'shared') {
+        // For shared mode, check if branch exists and create if needed
+        try {
+          const existingBranches = await git.listBranches({
+            fs: fsForGit,
+            dir: projectDir
+          });
+          
+          const branchExists = existingBranches.includes(collab_branch_name);
+          
+          if (!branchExists) {
+            await git.branch({ 
+              fs: fsForGit, 
+              dir: projectDir, 
+              ref: collab_branch_name, 
+              checkout: false 
+            });
+            console.log(`Shared branch ${collab_branch_name} created locally for repo ${repo.full_name}`);
+          } else {
+            console.log(`Shared branch ${collab_branch_name} already exists locally for repo ${repo.full_name}`);
+          }
+        } catch (branchError) {
+          console.warn(`Warning creating shared branch ${collab_branch_name}: ${branchError.message}`);
+        }
       }
 
-
-      // 4. Generate a unique token and save the share link to the DB, including userId
+      // 4. Generate a unique token and save the share link to the DB
       const share_token = uuidGenerator();
       const newShareLink = await new Promise((resolve, reject) => {
-          // Added user_id to the SQL query and parameters
           const sql = 'INSERT INTO share_links (doc_id, user_id, share_token, collab_branch_name, collaborator_label) VALUES (?, ?, ?, ?, ?)';
-          db.run(sql, [doc.id, actualUserId, share_token, collab_branch_name, label || ''], function(err) { // Use actualUserId, ensure label has a default
+          db.run(sql, [doc.id, actualUserId, share_token, collab_branch_name, label || ''], function(err) {
               if (err) return reject(err);
-              // Ensure the response is consistent with what ShareModal.jsx might use
-              resolve({ id: this.lastID, share_token, collaborator_label: label || '', collab_branch_name });
+              resolve({ 
+                id: this.lastID, 
+                share_token, 
+                collaborator_label: label || '', 
+                collab_branch_name,
+                collaborationMode 
+              });
           });
       });
       
@@ -273,11 +297,10 @@ function shareRouteLogic(db, git, uuidGenerator, projectBaseDir, fsForGit) {
 
     } catch (error) {
       console.error('Error creating share link:', error);
-      // Check if it's a known error type, e.g., from DB constraints
       if (error.message && error.message.includes('UNIQUE constraint failed: share_links.share_token')) {
         return res.status(409).json({ error: 'Failed to generate a unique share token. Please try again.' });
       }
-      if (error.message && error.message.includes('UNIQUE constraint failed: share_links.collab_branch_name')) { // Assuming you might add this constraint
+      if (error.message && error.message.includes('UNIQUE constraint failed: share_links.collab_branch_name')) {
         return res.status(409).json({ error: `Branch name ${branchName} is already in use for a share link. Choose a different name.` });
       }
       res.status(500).json({ error: error.message || 'An unexpected error occurred while creating the share link.' });
@@ -399,7 +422,7 @@ router.get('/:docId/shares', async (req, res) => {
 
   try {
     const links = await new Promise((resolve, reject) => {
-      const sql = 'SELECT id, share_token, collaborator_label, created_at FROM share_links WHERE doc_id = ? ORDER BY created_at DESC';
+      const sql = 'SELECT id, share_token, collaborator_label, collab_branch_name, created_at FROM share_links WHERE doc_id = ? ORDER BY created_at DESC';
       actualDb.all(sql, [docId], (err, rows) => {
         if (err) {
           console.error('Database error fetching share links:', err);
@@ -525,6 +548,153 @@ router.get('/debug/shares', async (req, res) => {
 
   } catch (error) {
     console.error('Error getting all share links:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/docs/:docId/suggestions - Get all suggestions from all collaboration branches
+router.get('/:docId/suggestions', async (req, res) => {
+  const { docId } = req.params;
+
+  console.log('Suggestions endpoint called:', { docId, user: req.user, isAuthenticated: req.isAuthenticated() });
+
+  try {
+    // Get all share links for this document
+    const shareLinks = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT 
+          s.share_token,
+          s.collab_branch_name,
+          s.collaborator_label,
+          d.filepath,
+          r.full_name,
+          r.main_branch
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.doc_id = ?
+      `;
+      actualDb.all(sql, [docId], (err, rows) => {
+        if (err) return reject(new Error(`Database error: ${err.message}`));
+        resolve(rows);
+      });
+    });
+
+    console.log('Found share links:', shareLinks.length);
+
+    const allSuggestions = [];
+
+    // For each collaboration branch, get the latest content and comments
+    for (const link of shareLinks) {
+      const projectDir = actualPath.join(REPOS_DIR_path, link.full_name);
+      
+      try {
+        // Checkout the collaboration branch
+        await actualGit.checkout({ fs: actualFsForGit, dir: projectDir, ref: link.collab_branch_name });
+        
+        // Get the latest commit hash
+        const commitHash = await actualGit.resolveRef({ fs: actualFsForGit, dir: projectDir, ref: link.collab_branch_name });
+        
+        // Read the QMD file
+        const fullFilepath = actualPath.join(projectDir, link.filepath);
+        const qmdContent = await actualFs.readFile(fullFilepath, 'utf8');
+        
+        // Extract comments from the QMD content
+        const { comments: extractedComments } = extractCommentsAppendix(qmdContent);
+        
+        // Add suggestions from this branch
+        if (extractedComments.length > 0) {
+          allSuggestions.push({
+            branch: link.collab_branch_name,
+            collaborator: link.collaborator_label || 'Unknown',
+            shareToken: link.share_token,
+            commitHash: commitHash.substring(0, 7),
+            suggestions: extractedComments.map(comment => ({
+              id: comment.id,
+              author: comment.author,
+              timestamp: comment.timestamp,
+              status: comment.status,
+              thread: comment.thread,
+              location: comment.location // If you track comment locations
+            }))
+          });
+        }
+        
+        // Also check live_documents for unsaved changes
+        const liveDoc = await new Promise((resolve) => {
+          actualDb.get('SELECT comments_json FROM live_documents WHERE share_token = ?', [link.share_token], (err, row) => {
+            if (err || !row) resolve(null);
+            else resolve(row);
+          });
+        });
+        
+        if (liveDoc && liveDoc.comments_json) {
+          try {
+            const liveComments = JSON.parse(liveDoc.comments_json);
+            if (liveComments.length > 0) {
+              allSuggestions.push({
+                branch: `${link.collab_branch_name} (unsaved)`,
+                collaborator: link.collaborator_label || 'Unknown',
+                shareToken: link.share_token,
+                commitHash: 'UNSAVED',
+                suggestions: liveComments.map(comment => ({
+                  id: comment.id,
+                  author: comment.author,
+                  timestamp: comment.timestamp,
+                  status: comment.status,
+                  thread: comment.thread,
+                  location: comment.location
+                }))
+              });
+            }
+          } catch (e) {
+            console.warn(`Failed to parse live comments for ${link.share_token}:`, e);
+          }
+        }
+        
+      } catch (error) {
+        console.warn(`Failed to process branch ${link.collab_branch_name}:`, error.message);
+        // Continue with other branches
+      }
+    }
+
+    console.log('Returning suggestions:', { documentId: docId, totalSuggestions: allSuggestions.reduce((sum, branch) => sum + branch.suggestions.length, 0) });
+
+    res.json({
+      documentId: docId,
+      totalSuggestions: allSuggestions.reduce((sum, branch) => sum + branch.suggestions.length, 0),
+      branches: allSuggestions
+    });
+
+  } catch (error) {
+    console.error('Error getting suggestions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/docs/document-id - Get document ID from repoId and filepath
+router.get('/document-id', async (req, res) => {
+  const { repoId, filepath } = req.query;
+
+  if (!repoId || !filepath) {
+    return res.status(400).json({ error: 'repoId and filepath are required.' });
+  }
+
+  try {
+    const doc = await new Promise((resolve, reject) => {
+      actualDb.get('SELECT id FROM documents WHERE repo_id = ? AND filepath = ?', [repoId, filepath], (err, row) => {
+        if (err) return reject(new Error(`Database error: ${err.message}`));
+        resolve(row);
+      });
+    });
+
+    if (!doc) {
+      return res.status(404).json({ error: 'Document not found.' });
+    }
+
+    res.json({ docId: doc.id });
+  } catch (error) {
+    console.error('Error getting document ID:', error);
     res.status(500).json({ error: error.message });
   }
 });

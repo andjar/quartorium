@@ -10,21 +10,35 @@ require('./db/sqlite'); // This initializes the database connection
 
 const app = express();
 const PORT = 8000;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Middleware
-app.use(cors({ origin: FRONTEND_URL, credentials: true })); // Allow requests from our frontend
+app.use(cors({ 
+  origin: [FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173'], 
+  credentials: true 
+})); // Allow requests from multiple frontend ports
 app.use(express.json());
+
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path}`, {
+    origin: req.headers.origin,
+    cookie: req.headers.cookie ? 'present' : 'missing',
+    userAgent: req.headers['user-agent']
+  });
+  next();
+});
 
 // Session Middleware
 app.use(
   session({
-    secret: process.env.SESSION_SECRET,
+    secret: process.env.SESSION_SECRET || 'fallback-secret-key-for-development-only',
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+      secure: false, // Set to false for development (http)
+      sameSite: 'lax', // Allow cross-site requests
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     },
   })
@@ -59,6 +73,16 @@ const isAuthenticated = (req, res, next) => {
 app.get('/api/me', isAuthenticated, (req, res) => {
   // req.user is populated by Passport's deserializeUser
   res.json(req.user);
+});
+
+// Test endpoint to check authentication status
+app.get('/api/auth/test', (req, res) => {
+  res.json({
+    isAuthenticated: req.isAuthenticated(),
+    user: req.user,
+    session: req.session ? 'present' : 'missing',
+    cookies: req.headers.cookie ? 'present' : 'missing'
+  });
 });
 
 app.post('/api/auth/logout', (req, res, next) => {

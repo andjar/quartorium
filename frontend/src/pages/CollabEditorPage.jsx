@@ -10,6 +10,9 @@ import FigureReference from '../components/editor/FigureReference';
 import CommentMark, { commentHighlightPluginKey } from '../components/editor/CommentMark';
 import CommentSidebar from '../components/editor/CommentSidebar';
 import FloatingCommentButton from '../components/editor/FloatingCommentButton';
+import BranchLockStatus from '../components/editor/BranchLockStatus';
+import ChangeIndicator from '../components/editor/ChangeIndicator';
+import SaveStatus from '../components/editor/SaveStatus';
 import './EditorPage.css';
 
 function CollabEditorPage() {
@@ -17,15 +20,65 @@ function CollabEditorPage() {
   const [status, setStatus] = useState('Loading...');
   const [error, setError] = useState('');
   const [baseCommitHash, setBaseCommitHash] = useState(null);
-  const [comments, setComments] = useState([]); // Existing state for comments
+  const [comments, setComments] = useState([]);
   const [activeCommentId, setActiveCommentId] = useState(null);
-  const [collaboratorLabel, setCollaboratorLabel] = useState(null); // New state for collaborator label
-  const commentsRef = useRef(comments); // Ref to store current comments
+  const [collaboratorLabel, setCollaboratorLabel] = useState(null);
+  const [lockStatus, setLockStatus] = useState(null);
+  const [isEditorEnabled, setIsEditorEnabled] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const commentsRef = useRef(comments);
 
   // Update ref whenever comments change
   useEffect(() => {
     commentsRef.current = comments;
   }, [comments]);
+
+  // Fetch share link info to get collaborator label
+  useEffect(() => {
+    if (!shareToken) return;
+    
+    console.log('Fetching share link info for shareToken:', shareToken);
+    fetch(`/api/collab/${shareToken}/info`)
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        console.log('Share link info received:', data);
+        if (data.collaboratorLabel) {
+          console.log('Setting collaborator label from share link info:', data.collaboratorLabel);
+          setCollaboratorLabel(data.collaboratorLabel);
+        } else {
+          console.log('No collaborator label in share link info');
+        }
+      })
+      .catch(error => {
+        console.error('Failed to fetch share link info:', error);
+      });
+  }, [shareToken]);
+
+  // Handle lock status changes
+  const handleLockChange = (newLockStatus) => {
+    console.log('Lock status changed:', newLockStatus);
+    console.log('Collaborator label:', collaboratorLabel);
+    console.log('isLockedByMe:', newLockStatus.isLockedByMe);
+    console.log('isLocked:', newLockStatus.isLocked);
+    
+    setLockStatus(newLockStatus);
+    const hasLock = newLockStatus.isLockedByMe || !newLockStatus.isLocked;
+    console.log('hasLock calculated as:', hasLock);
+    setIsEditorEnabled(hasLock);
+    
+    if (!hasLock && newLockStatus.isLocked) {
+      setStatus('Document is being edited by another collaborator');
+    } else if (newLockStatus.isLockedByMe) {
+      setStatus('You are editing - changes will be saved automatically');
+    } else {
+      setStatus('Document is available for editing');
+    }
+  };
 
   // Placeholder for current user - replace with actual user context/auth later
   const currentUser = { 
@@ -122,7 +175,6 @@ function CollabEditorPage() {
       CommentMark.configure({
         onCommentClick: (id) => {
           setActiveCommentId(id);
-          // Here you would also scroll the sidebar to the comment
         },
       }),
     ],
@@ -130,9 +182,12 @@ function CollabEditorPage() {
       type: 'doc',
       content: []
     },
-    editable: true,
+    editable: isEditorEnabled,
     onUpdate: ({ editor }) => {
+      if (!isEditorEnabled) return;
+      
       console.log('Editor update triggered');
+      setIsEditing(true); // Mark as editing when user types
       setStatus('Unsaved');
       saveDocument(editor.getJSON());
 
@@ -166,17 +221,26 @@ function CollabEditorPage() {
       console.log('Editor instance:', editor);
       console.log('Editor is editable:', editor.isEditable);
       console.log('Editor content:', editor.getJSON());
-      console.log('Available commands:', {
-        toggleBold: !!editor.commands.toggleBold,
-        toggleItalic: !!editor.commands.toggleItalic,
-        toggleStrike: !!editor.commands.toggleStrike,
-        toggleHeading: !!editor.commands.toggleHeading,
-      });
     },
-    onBeforeCreate: ({ editor }) => {
-      console.log('Editor before create');
-    },
-  }, []); // The dependency array should be empty.
+  }, [isEditorEnabled]);
+
+  // Update editor editable state when isEditorEnabled changes
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) {
+      console.log('Setting editor editable to:', isEditorEnabled);
+      editor.setEditable(isEditorEnabled);
+    }
+  }, [isEditorEnabled, editor]);
+
+  // Reset editing state after user stops typing
+  useEffect(() => {
+    if (isEditing) {
+      const timeoutId = setTimeout(() => {
+        setIsEditing(false);
+      }, 2000); // Reset after 2 seconds of no typing
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isEditing]);
 
   // 👇 --- THIS IS THE FINAL, CORRECT useEffect --- 👇
   useEffect(() => {
@@ -246,6 +310,10 @@ function CollabEditorPage() {
       })
       .then(data => {
         console.log('API response data:', data);
+        console.log('API response data.collaboratorLabel:', data.collaboratorLabel);
+        console.log('API response data type:', typeof data.collaboratorLabel);
+        console.log('API response data.prosemirrorJson:', data.prosemirrorJson);
+        console.log('API response data.prosemirrorJson type:', typeof data.prosemirrorJson);
         // Expecting data to have { prosemirrorJson, comments, currentCommitHash }
         if (data.prosemirrorJson && data.currentCommitHash) {
           let contentToLoad = data.prosemirrorJson;
@@ -258,11 +326,16 @@ function CollabEditorPage() {
             }
           }
           console.log('Setting editor content:', contentToLoad);
+          console.log('Content to load type:', typeof contentToLoad);
+          console.log('Content to load structure:', JSON.stringify(contentToLoad, null, 2));
           editor.commands.setContent(contentToLoad);
           setBaseCommitHash(data.currentCommitHash);
           // Set collaborator label if provided by the backend
           if (data.collaboratorLabel) {
+            console.log('Setting collaborator label from API:', data.collaboratorLabel);
             setCollaboratorLabel(data.collaboratorLabel);
+          } else {
+            console.log('No collaborator label received from API');
           }
           // Load comments if provided by the backend
           if (data.comments) {
@@ -355,33 +428,66 @@ function CollabEditorPage() {
       <header className="editor-header">
         <h3>Quartorium</h3>
         {collaboratorLabel && <p>Hello, {collaboratorLabel}!</p>}
+        
         <div>
-          <span>Status: {status} (Commit: {baseCommitHash ? baseCommitHash.substring(0, 7) : 'N/A'})</span>
-          <button onClick={createEmptyComment} style={{ margin: '1rem' }}>Add Comment</button>
+          <button 
+            onClick={createEmptyComment} 
+            style={{ margin: '1rem' }}
+            disabled={!isEditorEnabled}
+          >
+            Add Comment
+          </button>
           <button
             onClick={handleCollabCommit}
             style={{ marginRight: '2rem' }}
-            disabled={!baseCommitHash || status.includes('Saving') || status.includes('Committing...')}
+            disabled={!baseCommitHash || status.includes('Saving') || status.includes('Committing...') || !isEditorEnabled}
           >
             Commit
           </button>
         </div>
       </header>
+      
       <div className="editor-main-area">
+        {/* Left Sidebar for Collaboration Status */}
+        <div className="collaboration-sidebar">
+          {/* Save Status */}
+          <SaveStatus 
+            status={status}
+            baseCommitHash={baseCommitHash}
+          />
+          
+          {/* Simplified Branch Lock Status */}
+          <BranchLockStatus 
+            shareToken={shareToken}
+            collaboratorLabel={collaboratorLabel}
+            onLockChange={handleLockChange}
+            isEditing={isEditing}
+          />
+          
+          {/* Recent Changes Indicator */}
+          <ChangeIndicator 
+            shareToken={shareToken}
+            collaboratorLabel={collaboratorLabel}
+          />
+        </div>
+
         <main className="editor-content-area">
           {error ? <p style={{color: 'red'}}>{error}</p> : <EditorContent editor={editor} />}
-          <FloatingCommentButton 
-            editor={editor} 
-            onAddComment={createEmptyComment}
-          />
+          {isEditorEnabled && (
+            <FloatingCommentButton 
+              editor={editor} 
+              onAddComment={createEmptyComment}
+            />
+          )}
         </main>
+        
         <CommentSidebar
           comments={comments}
-          setComments={setComments} // Pass setComments
+          setComments={setComments}
           activeCommentId={activeCommentId}
-          onCommentSelect={setActiveCommentId} // This is for selecting/activating a comment from the sidebar
-          currentUser={currentUser} // Pass currentUser
-          onAddComment={addComment} // Pass the addComment function
+          onCommentSelect={setActiveCommentId}
+          currentUser={currentUser}
+          onAddComment={addComment}
         />
       </div>
     </div>

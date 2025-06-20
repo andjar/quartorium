@@ -69,15 +69,35 @@
 /* Container for the main editor and sidebar area */
 .editor-main-area {
   display: flex;
-  flex-grow: 1;
+  flex: 1;
   overflow: hidden;
   /* Account for the fixed 64px header */
   height: calc(100vh - 64px);
   margin-top: 64px;
 }
 
-/* The "page" or "document" area holding the editor */
+/* Collaboration Sidebar */
+.collaboration-sidebar {
+  width: 250px;
+  background: #f8f9fa;
+  border-right: 1px solid #dee2e6;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.collaboration-sidebar > * {
+  flex-shrink: 0;
+}
+
+/* Editor Content Area */
 .editor-content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   max-width: 820px; /* Slightly wider for modern screens */
   width: 100%;
   margin: 0 auto;
@@ -88,8 +108,6 @@
   margin-top: 2rem;
   margin-bottom: 2rem;
   box-sizing: border-box;
-  flex-grow: 1;
-  overflow-y: auto; /* Allow this container to scroll */
   height: calc(100% - 4rem); /* Full height minus top/bottom margins */
 }
 
@@ -180,4 +198,27 @@
   color: var(--text-secondary);
   font-size: 0.9em;
   margin-top: 0.5em;
+}
+
+/* Author Info in Sidebar */
+.author-info {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.author-info h4 {
+  margin: 0 0 8px 0;
+  color: #495057;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.author-info p {
+  margin: 0 0 12px 0;
+  color: #6c757d;
+  font-size: 12px;
+  line-height: 1.4;
 }
