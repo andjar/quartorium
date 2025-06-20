@@ -7,9 +7,8 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
   const [existingLinks, setExistingLinks] = useState([]);
   const [error, setError] = useState('');
   const [newLink, setNewLink] = useState(null);
-  // New state variables
-  const [selectedBranch, setSelectedBranch] = useState('');
-  const [newBranchName, setNewBranchName] = useState('');
+  // Simplified state variables
+  const [selectedBranch, setSelectedBranch] = useState('new-branch');
   const [collaborationBranches, setCollaborationBranches] = useState([]);
 
   // Fetch collaboration branches from the repository
@@ -21,13 +20,8 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
       if (response.ok) {
         const branches = await response.json();
         setCollaborationBranches(branches);
-        // Set "main" as default if it exists, otherwise use the first branch
-        const mainBranch = branches.find(branch => branch.name === 'main');
-        if (mainBranch) {
-          setSelectedBranch('main');
-        } else if (branches.length > 0) {
-          setSelectedBranch(branches[0].name);
-        }
+        // Set "new-branch" as default
+        setSelectedBranch('new-branch');
       } else {
         console.error('Failed to fetch collaboration branches');
         setCollaborationBranches([]);
@@ -48,15 +42,43 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
     fetchCollaborationBranches(repoId);
   }, [docId, repoId]);
 
+  // Generate branch name from label
+  const generateBranchName = (label) => {
+    if (!label) return '';
+    const formattedLabel = label
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '') // Remove special characters except spaces and hyphens
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
+      .trim();
+    
+    const date = new Date();
+    const formattedDate = date.toISOString().split('T')[0]; // Get YYYY-MM-DD format
+
+    return `${formattedDate}-${formattedLabel}`;
+  };
+
   const handleCreateLink = (e) => {
     e.preventDefault();
     setError('');
     setNewLink(null);
 
-    const branchToUse = newBranchName || selectedBranch;
-    if (!branchToUse) {
-      setError('Please select an existing branch or enter a new branch name.');
+    // Validate that label is provided
+    if (!label.trim()) {
+      setError('Please provide a label for this share link.');
       return;
+    }
+
+    // Determine branch name based on selection
+    let branchToUse;
+    if (selectedBranch === 'new-branch') {
+      branchToUse = generateBranchName(label);
+      if (!branchToUse) {
+        setError('Please provide a valid label to generate a branch name.');
+        return;
+      }
+    } else {
+      branchToUse = selectedBranch;
     }
 
     // Include userId, selectedBranch/newBranchName in the request
@@ -77,7 +99,7 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
         const fullUrl = `${window.location.origin}/collab/${data.share_token}`;
         setNewLink(fullUrl);
         setLabel(''); // Reset form
-        setNewBranchName(''); // Reset new branch name input
+        setSelectedBranch('new-branch'); // Reset to new branch option
         // Refresh the list of links
         fetch(`/api/docs/${docId}/shares`, { credentials: 'include' }).then(res => res.json()).then(setExistingLinks);
         // Always refresh branches to ensure dropdown is current
@@ -102,7 +124,12 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
             <ul>
               {existingLinks.map(link => (
                 <li key={link.id}>
-                  <span>{link.collaborator_label || 'Unnamed Link'}</span>
+                  <div className="link-info">
+                    <span className="link-label">{link.collaborator_label || 'Unnamed Link'}</span>
+                    {link.collab_branch_name && (
+                      <span className="branch-name">Branch: {link.collab_branch_name}</span>
+                    )}
+                  </div>
                   <div>
                     <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/collab/${link.share_token}`)}>Copy Link</button>
                     <Link to={`/review/${link.share_token || link.id}`}>
@@ -117,42 +144,34 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
 
         <form onSubmit={handleCreateLink}>
           <div className="form-group">
-            <label htmlFor="linkLabel">Label (optional)</label>
+            <label htmlFor="linkLabel">Label *</label>
             <input
               id="linkLabel"
               type="text"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="E.g., Prof. Smith's Review"
+              required
             />
           </div>
 
           <div className="form-group">
-            <label htmlFor="existingBranch">Select Existing Branch</label>
+            <label htmlFor="existingBranch">Select Branch</label>
             <select
               id="existingBranch"
               value={selectedBranch}
-              onChange={(e) => { setSelectedBranch(e.target.value); setNewBranchName(''); }}
-              disabled={collaborationBranches.length === 0 || !!newBranchName}
+              onChange={(e) => setSelectedBranch(e.target.value)}
             >
-              <option value="">-- Select a branch --</option>
+              <option value="new-branch">New Branch (auto-generated from label)</option>
               {collaborationBranches.map(branch => (
                 <option key={branch.id || branch.name} value={branch.name}>{branch.name}</option>
               ))}
             </select>
-          </div>
-
-          <p className="or-divider"><span>OR</span></p>
-
-          <div className="form-group">
-            <label htmlFor="newBranchName">Create New Branch</label>
-            <input
-              id="newBranchName"
-              type="text"
-              value={newBranchName}
-              onChange={(e) => { setNewBranchName(e.target.value); setSelectedBranch(''); }}
-              placeholder="E.g., review-feature-xyz"
-            />
+            {selectedBranch === 'new-branch' && label && (
+              <p className="branch-preview">
+                Branch name will be: <code>{generateBranchName(label)}</code>
+              </p>
+            )}
           </div>
 
           <button type="submit" style={{ 

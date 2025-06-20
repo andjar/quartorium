@@ -70,6 +70,23 @@
     flex: 1;
   }
 
+  .existing-links li .link-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .existing-links li .link-label {
+    font-weight: 500;
+    color: #212529;
+  }
+
+  .existing-links li .branch-name {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 2px;
+  }
+
   .existing-links li div {
     display: flex;
     gap: 8px;
