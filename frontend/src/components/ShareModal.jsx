@@ -58,28 +58,15 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
     return `${formattedDate}-${formattedLabel}`;
   };
 
-  const handleCreateLink = (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError('');
-    setNewLink(null);
-
-    // Validate that label is provided
     if (!label.trim()) {
-      setError('Please provide a label for this share link.');
+      setError('Please enter a label for the collaborator.');
       return;
     }
 
-    // Determine branch name based on selection
-    let branchToUse;
-    if (selectedBranch === 'new-branch') {
-      branchToUse = generateBranchName(label);
-      if (!branchToUse) {
-        setError('Please provide a valid label to generate a branch name.');
-        return;
-      }
-    } else {
-      branchToUse = selectedBranch;
-    }
+    setError('');
+    const branchToUse = selectedBranch === 'new-branch' ? generateBranchName(label) : selectedBranch;
 
     // Include userId, selectedBranch/newBranchName in the request
     fetch('/api/docs/share', {
@@ -90,67 +77,50 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
         repoId,
         filepath: docFilepath,
         label,
-        userId, // Assuming userId is passed as a prop or available in scope
-        branchName: branchToUse, // Send either selected existing or new branch name
+        userId,
+        branchName: branchToUse,
+        collaborationMode: 'individual', // Default to individual mode
       }),
     })
     .then(res => res.ok ? res.json() : Promise.reject(res))
     .then(data => {
         const fullUrl = `${window.location.origin}/collab/${data.share_token}`;
         setNewLink(fullUrl);
-        setLabel(''); // Reset form
-        setSelectedBranch('new-branch'); // Reset to new branch option
+        setLabel('');
+        setSelectedBranch('new-branch');
         // Refresh the list of links
         fetch(`/api/docs/${docId}/shares`, { credentials: 'include' }).then(res => res.json()).then(setExistingLinks);
         // Always refresh branches to ensure dropdown is current
         fetchCollaborationBranches(repoId);
     })
     .catch(async (res) => {
-        // It's good practice to check if res has a json method before calling it
         const errText = res.json ? await res.json().catch(() => ({})) : {};
         setError(errText.error || 'Failed to create link.');
     });
   };
 
+  const copyLink = (shareToken) => {
+    const fullUrl = `${window.location.origin}/collab/${shareToken}`;
+    navigator.clipboard.writeText(fullUrl);
+  };
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()}>
-        <h2>Share "{docFilepath}"</h2>
-        <p>Create a new shareable link for a collaborator.</p>
-        
-        <div className="existing-links">
-          <h4>Existing Share Links</h4>
-          {existingLinks.length > 0 ? (
-            <ul>
-              {existingLinks.map(link => (
-                <li key={link.id}>
-                  <div className="link-info">
-                    <span className="link-label">{link.collaborator_label || 'Unnamed Link'}</span>
-                    {link.collab_branch_name && (
-                      <span className="branch-name">Branch: {link.collab_branch_name}</span>
-                    )}
-                  </div>
-                  <div>
-                    <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/collab/${link.share_token}`)}>Copy Link</button>
-                    <Link to={`/review/${link.share_token || link.id}`}>
-                      <button>Review</button>
-                    </Link>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : <p style={{ padding: '16px', margin: 0, color: '#6b7280', fontStyle: 'italic' }}>No share links created yet.</p>}
+    <div className="share-modal-overlay">
+      <div className="share-modal">
+        <div className="share-modal-header">
+          <h2>Share Document</h2>
+          <button onClick={onClose} className="close-button">×</button>
         </div>
 
-        <form onSubmit={handleCreateLink}>
+        <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="linkLabel">Label *</label>
+            <label htmlFor="label">Collaborator Label</label>
             <input
-              id="linkLabel"
               type="text"
+              id="label"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="E.g., Prof. Smith's Review"
+              placeholder="e.g., Review by Prof. Smith"
               required
             />
           </div>
@@ -195,6 +165,29 @@ function ShareModal({ userId, docId, docFilepath, repoId, onClose }) { // Added 
             <p><strong>New link created!</strong></p>
             <input type="text" readOnly value={newLink} />
             <button onClick={() => navigator.clipboard.writeText(newLink)}>Copy</button>
+          </div>
+        )}
+
+        {/* Existing Share Links */}
+        {existingLinks.length > 0 && (
+          <div className="existing-links">
+            <h4>Existing Share Links</h4>
+            <ul>
+              {existingLinks.map((link) => (
+                <li key={link.id}>
+                  <div className="link-info">
+                    <div className="link-label">{link.collaborator_label || 'Unnamed Collaboration'}</div>
+                    <div className="branch-name">Branch: {link.collab_branch_name || 'Unknown'}</div>
+                  </div>
+                  <div>
+                    <button onClick={() => copyLink(link.share_token)}>Copy Link</button>
+                    <Link to={`/review/${link.share_token}`}>
+                      <button>Review Changes</button>
+                    </Link>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
