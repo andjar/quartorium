@@ -4,6 +4,8 @@ const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
 const passport = require('./core/auth'); // Our passport config
+const fs = require('fs');
+const path = require('path');
 require('./db/sqlite'); // This initializes the database connection
 
 const app = express();
@@ -83,3 +85,70 @@ app.use('/api/assets', assetRoutes);
 
 // --- Public API Routes ---
 app.use('/api/collab', collabRoutes);
+
+// --- Reset Route ---
+app.post('/api/reset', (req, res) => {
+  try {
+    // Close the database connection first
+    const db = require('./db/sqlite');
+    db.close((err) => {
+      if (err) {
+        console.error('Error closing database:', err.message);
+      } else {
+        console.log('Database connection closed.');
+      }
+      
+      // Delete the database file
+      const dbPath = path.join(__dirname, 'db', 'quartorium.db');
+      if (fs.existsSync(dbPath)) {
+        fs.unlinkSync(dbPath);
+        console.log('✅ Database file deleted.');
+      }
+      
+      // Empty the cache folder
+      const cachePath = path.join(__dirname, '..', 'cache');
+      if (fs.existsSync(cachePath)) {
+        const cacheContents = fs.readdirSync(cachePath);
+        cacheContents.forEach(item => {
+          const itemPath = path.join(cachePath, item);
+          if (fs.lstatSync(itemPath).isDirectory()) {
+            fs.rmSync(itemPath, { recursive: true, force: true });
+          } else {
+            fs.unlinkSync(itemPath);
+          }
+        });
+        console.log('✅ Cache folder emptied.');
+      }
+      
+      // Empty the repos folder
+      const reposPath = path.join(__dirname, '..', 'repos');
+      if (fs.existsSync(reposPath)) {
+        const reposContents = fs.readdirSync(reposPath);
+        reposContents.forEach(item => {
+          const itemPath = path.join(reposPath, item);
+          if (fs.lstatSync(itemPath).isDirectory()) {
+            fs.rmSync(itemPath, { recursive: true, force: true });
+          } else {
+            fs.unlinkSync(itemPath);
+          }
+        });
+        console.log('✅ Repos folder emptied.');
+      }
+      
+      // Reinitialize the database
+      require('./db/sqlite');
+      
+      res.json({ 
+        success: true, 
+        message: 'Reset completed successfully. Database deleted and cache/repos folders emptied.' 
+      });
+    });
+  } catch (error) {
+    console.error('Error during reset:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to reset the system',
+      details: error.message 
+    });
+  }
+});
