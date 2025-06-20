@@ -722,13 +722,12 @@ router.get('/:shareToken/lock-status', async (req, res) => {
 // GET /api/collab/:shareToken/recent-changes - Get recent changes from all collaborators
 router.get('/:shareToken/recent-changes', async (req, res) => {
   const { shareToken } = req.params;
-  const { since } = req.query; // Optional timestamp to get changes since a specific time
 
   try {
-    // Get share link information
+    // 1. Get info about the current request
     const linkInfo = await new Promise((resolve, reject) => {
       const sql = `
-        SELECT s.*, d.filepath, r.id as repoId, r.full_name, s.collaborator_label
+        SELECT s.doc_id, s.collab_branch_name, r.full_name
         FROM share_links s 
         JOIN documents d ON s.doc_id = d.id 
         JOIN repositories r ON d.repo_id = r.id 
@@ -740,79 +739,64 @@ router.get('/:shareToken/recent-changes', async (req, res) => {
       });
     });
 
-    // Get all share links for the same document
-    const allShareLinks = await new Promise((resolve) => {
-      const sql = `
-        SELECT s.*, r.full_name
-        FROM share_links s 
-        JOIN repositories r ON s.repo_id = r.id 
-        WHERE s.doc_id = (SELECT doc_id FROM share_links WHERE share_token = ?)
-        AND s.share_token != ?
-      `;
-      db.all(sql, [shareToken, shareToken], (err, rows) => {
-        if (err) resolve([]);
-        else resolve(rows);
+    // 2. Get all share tokens for the same document to find all live changes
+    const allShareLinks = await new Promise((resolve, reject) => {
+      const sql = `SELECT share_token, collaborator_label FROM share_links WHERE doc_id = ?`;
+      db.all(sql, [linkInfo.doc_id], (err, rows) => {
+        if (err) return reject(new Error('Could not query for sibling share links.'));
+        resolve(rows);
       });
     });
 
-    // Get live changes from all collaborators
-    const liveChanges = await new Promise((resolve) => {
+    // 3. Get all live (unsaved) changes for this document
+    const liveChanges = await new Promise((resolve, reject) => {
+      if (!allShareLinks.length) return resolve([]);
+      const tokens = allShareLinks.map(l => l.share_token);
+      const placeholders = tokens.map(() => '?').join(',');
       const sql = `
-        SELECT ld.*, sl.collaborator_label, sl.share_token
-        FROM live_documents ld
-        JOIN share_links sl ON ld.share_token = sl.share_token
-        WHERE sl.doc_id = (SELECT doc_id FROM share_links WHERE share_token = ?)
-        AND ld.share_token != ?
-        ${since ? 'AND ld.updated_at > ?' : ''}
-        ORDER BY ld.updated_at DESC
+        SELECT share_token, updated_at FROM live_documents
+        WHERE share_token IN (${placeholders})
+        ORDER BY updated_at DESC
       `;
-      const params = since ? [shareToken, shareToken, since] : [shareToken, shareToken];
-      db.all(sql, params, (err, rows) => {
-        if (err) resolve([]);
-        else resolve(rows);
-      });
-    });
-
-    // Get recent commits from all collaboration branches
-    const recentCommits = [];
-    for (const link of allShareLinks) {
-      try {
-        const projectDir = path.join(REPOS_DIR, link.full_name);
+      db.all(sql, tokens, (err, rows) => {
+        if (err) return reject(new Error('Could not query live documents.'));
         
-        // Get recent commits from this collaborator's branch
-        const commits = await git.log({
-          fs: fsForGit,
-          dir: projectDir,
-          ref: link.collab_branch_name,
-          depth: 5 // Get last 5 commits
+        // Map collaborator label back to the live change
+        const changesWithLabels = rows.map(row => {
+          const link = allShareLinks.find(l => l.share_token === row.share_token);
+          return {
+            ...row,
+            collaboratorLabel: link ? link.collaborator_label : 'Unknown'
+          };
         });
-
-        commits.forEach(commit => {
-          recentCommits.push({
-            hash: commit.oid,
-            message: commit.commit.message,
-            author: commit.commit.author.name,
-            timestamp: new Date(commit.commit.author.timestamp * 1000).toISOString(),
-            collaboratorLabel: link.collaborator_label,
-            branchName: link.collab_branch_name
-          });
-        });
-      } catch (error) {
-        console.error(`Error getting commits for ${link.collab_branch_name}:`, error.message);
-      }
+        resolve(changesWithLabels);
+      });
+    });
+    
+    // 4. Get recent commits from the single shared collaboration branch
+    const recentCommits = [];
+    try {
+      const projectDir = path.join(REPOS_DIR, linkInfo.full_name);
+      const commits = await git.log({
+        fs: fsForGit,
+        dir: projectDir,
+        ref: linkInfo.collab_branch_name,
+        depth: 5
+      });
+      recentCommits.push(...commits.map(c => c));
+    } catch (error) {
+      console.error(`Error getting commits for ${linkInfo.collab_branch_name}:`, error.message);
     }
 
-    // Sort commits by timestamp
-    recentCommits.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
+    // 5. Send the combined and sorted data to the client
     res.json({
-      liveChanges: liveChanges.map(change => ({
-        collaboratorLabel: change.collaborator_label,
-        updatedAt: change.updated_at,
-        hasUnsavedChanges: true
-      })),
-      recentCommits: recentCommits.slice(0, 10), // Return last 10 commits
-      lastUpdated: new Date().toISOString()
+      liveChanges: liveChanges,
+      recentCommits: recentCommits.map(commit => ({
+        hash: commit.oid,
+        message: commit.commit.message,
+        author: commit.commit.author.name,
+        timestamp: new Date(commit.commit.author.timestamp * 1000).toISOString()
+      }))
     });
 
   } catch (error) {

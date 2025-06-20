@@ -15,18 +15,17 @@ function ChangeIndicator({ shareToken, collaboratorLabel }) {
       if (response.ok) {
         const data = await response.json();
         
-        // Combine live changes and recent commits
         const allChanges = [];
         
         // Add live changes
         if (data.liveChanges) {
           data.liveChanges.forEach(change => {
             allChanges.push({
-              id: `live-${change.collaboratorLabel}`,
+              id: `live-${change.share_token}`,
               author: change.collaboratorLabel,
-              timestamp: change.updatedAt,
+              timestamp: change.updated_at,
               type: 'live',
-              description: 'Has unsaved changes'
+              description: 'Is currently editing'
             });
           });
         }
@@ -34,19 +33,35 @@ function ChangeIndicator({ shareToken, collaboratorLabel }) {
         // Add recent commits
         if (data.recentCommits) {
           data.recentCommits.forEach(commit => {
+            // The author object from git.log is { name, email, timestamp, timezoneOffset }
+            // The API now sends a simplified author string.
             allChanges.push({
               id: `commit-${commit.hash}`,
-              author: commit.collaboratorLabel || commit.author,
+              author: commit.author,
               timestamp: commit.timestamp,
               type: 'commit',
-              description: commit.message.includes('Quartorium Collab') ? 'Committed changes' : 'Updated document'
+              description: commit.message.split('\\n')[0] // Show first line of commit message
             });
           });
         }
         
         // Sort by timestamp (most recent first)
         allChanges.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        setRecentChanges(allChanges);
+        
+        // Remove duplicate live changes for the same user, keeping only the most recent
+        const uniqueChanges = allChanges.reduce((acc, current) => {
+          if (current.type === 'live') {
+            const existing = acc.find(item => item.type === 'live' && item.author === current.author);
+            if (!existing) {
+              acc.push(current);
+            }
+          } else {
+            acc.push(current);
+          }
+          return acc;
+        }, []);
+        
+        setRecentChanges(uniqueChanges);
       } else {
         console.warn('Failed to fetch recent changes:', response.status);
         setRecentChanges([]);
