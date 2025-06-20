@@ -62,13 +62,36 @@ function serializeInlines(inlines, { citeMap, figMap }) {
         
         // Handle marks (comments, emphasis, etc.)
         if (inlineNode.marks && inlineNode.marks.length > 0) {
-          inlineNode.marks.forEach(mark => {
-            if (mark.type === 'comment' && mark.attrs && mark.attrs.commentId) {
-              // Format as Quarto comment span
-              text = `[${text}]{.comment ref="${mark.attrs.commentId}"}`;
+          // Sort marks to ensure consistent formatting order
+          const sortedMarks = [...inlineNode.marks].sort((a, b) => {
+            const order = ['comment', 'strikethrough', 'strong', 'em'];
+            return order.indexOf(a.type) - order.indexOf(b.type);
+          });
+          
+          sortedMarks.forEach(mark => {
+            switch (mark.type) {
+              case 'comment':
+                if (mark.attrs && mark.attrs.commentId) {
+                  // Format as Quarto comment span
+                  text = `[${text}]{.comment ref="${mark.attrs.commentId}"}`;
+                }
+                break;
+              case 'strong':
+                // Bold text: **text**
+                text = `**${text}**`;
+                break;
+              case 'em':
+                // Italic text: *text*
+                text = `*${text}*`;
+                break;
+              case 'strikethrough':
+                // Strikethrough text: ~~text~~
+                text = `~~${text}~~`;
+                break;
+              default:
+                console.warn(`Unhandled mark type: ${mark.type}`);
+                break;
             }
-            // Add other mark types as needed (bold, italic, etc.)
-            // For now, we'll keep it simple and just handle comments
           });
         }
         
