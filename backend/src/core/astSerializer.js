@@ -1,6 +1,37 @@
 const { parseQmd } = require('./qmdBlockParser'); // Adjust path if needed
 
 /**
+ * Splits text into sentences and adds line breaks after each sentence.
+ * This makes diffing easier by allowing sentence-by-sentence comparison.
+ * 
+ * @param {string} text - The text to split into sentences
+ * @returns {string} The text with line breaks after each sentence
+ */
+function addLineBreaksAfterSentences(text) {
+  if (!text || typeof text !== 'string') return text;
+  
+  // Split on sentence endings (., !, ?) followed by whitespace or end of string
+  // This regex handles common sentence endings while preserving abbreviations
+  const sentences = text.split(/([.!?])\s+/);
+  
+  if (sentences.length <= 1) return text;
+  
+  // Reconstruct with line breaks after each sentence
+  let result = '';
+  for (let i = 0; i < sentences.length; i += 2) {
+    if (i + 1 < sentences.length) {
+      // Complete sentence with punctuation
+      result += sentences[i] + sentences[i + 1] + '\n';
+    } else {
+      // Last fragment (might be incomplete sentence)
+      result += sentences[i];
+    }
+  }
+  
+  return result.trim();
+}
+
+/**
  * Creates maps to convert JATS IDs back to original QMD/BibTeX keys.
  * This is a simplified helper; you might need to make the logic more robust
  * based on your exact JATS ID generation.
@@ -207,10 +238,12 @@ function serializeBlock(node, blockMap, refMaps) {
     case 'heading': {
       const prefix = '#'.repeat(node.attrs.level);
       const text = serializeInlines(node.content, refMaps);
-      return `${prefix} ${text}`;
+      const textWithLineBreaks = addLineBreaksAfterSentences(text);
+      return `${prefix} ${textWithLineBreaks}`;
     }
     case 'paragraph': {
-      return serializeInlines(node.content, refMaps);
+      const paragraphText = serializeInlines(node.content, refMaps);
+      return addLineBreaksAfterSentences(paragraphText);
     }
     case 'quartoBlock': {
       const { blockKey, language, code, htmlOutput, figLabel, figCaption, chunkOptions } = node.attrs;
@@ -354,3 +387,12 @@ function proseMirrorJSON_to_qmd(pmDoc, originalQmdString, commentsArray = []) {
 }
 
 module.exports = { proseMirrorJSON_to_qmd };
+
+// Simple test for the sentence splitting function
+if (require.main === module) {
+  console.log('Testing sentence splitting:');
+  const testText = "This is the first sentence. This is the second sentence! And this is the third sentence? Finally, this is the last sentence.";
+  console.log('Original:', testText);
+  console.log('With line breaks:');
+  console.log(addLineBreaksAfterSentences(testText));
+}
