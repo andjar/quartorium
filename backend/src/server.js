@@ -35,7 +35,7 @@ app.use(
   session({
     store: new SQLiteStore({
       db: 'quartorium.db',
-      dir: './backend/db',
+      dir: path.join(__dirname, 'db'),
       concurrentDB: true
     }),
     secret: process.env.SESSION_SECRET || 'fallback-secret-key-for-development-only',
