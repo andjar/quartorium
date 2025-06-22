@@ -345,52 +345,26 @@ function serializeBlock(node, blockMap, refMaps) {
       // Handle LaTeX blocks
       if (language === 'latex') {
         console.log(`Serializing LaTeX block: key=${blockKey}`);
-        // Reconstruct the block with a potential label
-        const label = blockKey ? ` {#eq-${blockKey}}` : '';
+        // If we have a block key and it exists in the map, use the original content
+        if (blockKey && blockMap.has(blockKey)) {
+          return blockMap.get(blockKey);
+        }
+        // Fallback reconstruction
+        const label = blockKey ? ` {#${blockKey}}` : '';
         return `$$
 ${code}
 $$${label}`;
       }
       
-      // Handle tables that were not in the blockMap
+      // Handle tables by looking up the blockKey
       if (htmlOutput && htmlOutput.includes('<table')) {
-          const caption = figCaption ? `\n\n: ${figCaption} {#${blockKey}}` : '';
-          // This is a very basic reconstruction. A proper HTML-to-Markdown
-          // converter would be needed for complex tables.
-          let markdownTable = '';
-          const tableRegex = /<table.*?>([\s\S]*?)<\/table>/i;
-          const theadRegex = /<thead.*?>([\s\S]*?)<\/thead>/i;
-          const tbodyRegex = /<tbody.*?>([\s\S]*?)<\/tbody>/i;
-          const trRegex = /<tr.*?>([\s\S]*?)<\/tr>/g;
-          const thRegex = /<th.*?>([\s\S]*?)<\/th>/g;
-          const tdRegex = /<td.*?>([\s\S]*?)<\/td>/g;
-
-          const tableMatch = htmlOutput.match(tableRegex);
-          if (tableMatch) {
-              const tableContent = tableMatch[1];
-              const headMatch = tableContent.match(theadRegex);
-              const bodyMatch = tableContent.match(tbodyRegex);
-
-              if (headMatch) {
-                  const headerRowMatch = headMatch[1].match(trRegex);
-                  if (headerRowMatch) {
-                      const headers = [...headerRowMatch[0].matchAll(thRegex)].map(m => m[1].trim());
-                      markdownTable += `| ${headers.join(' | ')} |\n`;
-                      markdownTable += `|${headers.map(() => '---').join('|')}|\n`;
-                  }
-              }
-
-              if (bodyMatch) {
-                  const bodyRowsMatch = bodyMatch[1].match(trRegex);
-                  if (bodyRowsMatch) {
-                      bodyRowsMatch.forEach(rowHtml => {
-                          const cells = [...rowHtml.matchAll(tdRegex)].map(m => m[1].trim());
-                          markdownTable += `| ${cells.join(' | ')} |\n`;
-                      });
-                  }
-              }
+          if (blockKey && blockMap.has(blockKey)) {
+              return blockMap.get(blockKey);
           }
-          return markdownTable.trim() + caption;
+          console.warn(`Could not find table in blockMap for key: ${blockKey}`);
+          // Fallback to avoid losing data, though formatting may be imperfect
+          const caption = figCaption ? `\n\n: ${figCaption} {#${blockKey}}` : '';
+          return `[Reconstructed Table: Data may be incomplete]${caption}`;
       }
       
       // Handle metadata blocks - use the YAML block from the original file
