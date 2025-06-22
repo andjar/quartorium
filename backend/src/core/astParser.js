@@ -396,12 +396,23 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
             const tagName = el.tagName.toLowerCase();
 
             switch (tagName) {
-                case 'p':
-                    pmNodes.push({
-                        type: 'paragraph',
-                        content: transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath, level)
-                    });
+                case 'p': {
+                    // Check if this paragraph is just a wrapper for a block element like a formula
+                    const children = Array.from(el.childNodes);
+                    const significantChildren = children.filter(c => c.nodeType === 1 || (c.nodeType === 3 && c.textContent.trim().length > 0));
+
+                    if (significantChildren.length === 1 && significantChildren[0].tagName?.toLowerCase() === 'styled-content') {
+                        // This is a wrapper <p> for an equation. Process the styled-content directly as a block.
+                        pmNodes.push(...transformBodyNodes(significantChildren, blockMap, repoId, context, commitHash, docFilepath, level));
+                    } else {
+                        // It's a normal paragraph
+                        pmNodes.push({
+                            type: 'paragraph',
+                            content: transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath, level)
+                        });
+                    }
                     break;
+                }
                 case 'xref':
                     const refType = el.getAttribute('ref-type');
                     const rid = el.getAttribute('rid');
@@ -594,7 +605,7 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                         pmNodes.push(...transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath, level + 1));
                     }
                     break;
-                case 'styled-content':
+                case 'styled-content': {
                     console.log('Found styled-content, checking for equation');
                     const dispFormula = el.querySelector('disp-formula');
                     if (dispFormula) {
@@ -623,26 +634,25 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                     // If not a formula we care about, fall through to process children
                     pmNodes.push(...transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath, level));
                     break;
-                case 'fig':
+                }
+                case 'fig': {
                     console.log('Found standalone figure element');
                     // This handles figures outside of notebook cells
                     const pmBlock = processFig(el, repoId, '', null, commitHash, docFilepath);
-                    const blockKey = el.id;
-                    console.log(`Looking for standalone figure blockKey: ${blockKey} in blockMap`);
+                    const rawBlockKey = el.id;
+                    const blockKey = rawBlockKey.replace(/-nb-article$/, '');
+                    
+                    console.log(`Looking for standalone figure/table blockKey: ${blockKey} (raw: ${rawBlockKey}) in blockMap`);
+                    
                     if (blockMap.has(blockKey)) {
                         pmBlock.attrs.blockKey = blockKey;
-                        console.log(`Added standalone figure blockKey: ${blockKey}`);
+                        console.log(`Added blockKey: ${blockKey}`);
                     } else {
-                        console.log(`Standalone figure blockKey not found: ${blockKey}`);
-                        // Try to extract the key from the ID
-                        const extractedKey = blockKey.replace(/-nb-article$/, '');
-                        if (blockMap.has(extractedKey)) {
-                            pmBlock.attrs.blockKey = extractedKey;
-                            console.log(`Added extracted standalone figure blockKey: ${extractedKey}`);
-                        }
+                        console.warn(`Standalone figure/table blockKey not found in blockMap: ${blockKey}`);
                     }
                     pmNodes.push(pmBlock);
                     break;
+                }
                 case 'code':
                     // Handle standalone code blocks
                     console.log('Found standalone code element');

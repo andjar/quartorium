@@ -148,39 +148,24 @@ function parseQmd(qmdString) {
         .replace(/---[\s\S]*?---/, '') // Remove YAML
         .replace(/```[\s\S]*?```/g, ''); // Remove code blocks
 
-    const tableRegex = /((?:\|.*\|\n)+(?::.*?)?)(:.*\{#((?:tbl|fig)-[^\s}]+)\})?/g;
+    // Regex to find a markdown table and its optional labeled caption, accounting for blank lines.
+    const tableRegex = /((?:^\|.*(?:\n|$))+)(?:\s*\n)?(?::.*\{#(tbl-[^}]+)\})?/gm;
     let tableMatch;
     while ((tableMatch = tableRegex.exec(remainingText)) !== null) {
-        const tableContent = tableMatch[1].trim();
         const fullBlock = tableMatch[0].trim();
-        let key = `__TABLE_BLOCK_${blockOrder.length}__`; // Default key
-
-        // Check if there is a caption with a label
-        if (tableMatch[3]) {
-            key = tableMatch[3];
-        } else {
-            // If no label in caption, check for a label in the table content itself
-            const labelInContentMatch = fullBlock.match(/\{#(tbl-[^\s}]+)\}/);
-            if (labelInContentMatch) {
-                key = labelInContentMatch[1];
-            }
-        }
+        const key = tableMatch[2] || `__TABLE_BLOCK_${blockOrder.length}__`;
         
         blockMap.set(key, fullBlock);
         blockOrder.push(key);
         console.log('Found table block, stored as:', key);
     }
     
-    const equationRegex = /(\$\$[\s\S]*?\$\$)\s*(\{\s*#((?:eq|eqn)-[^\s}]+)\s*\})?/g;
+    // Regex to find a $$...$$ math block and its optional label.
+    const equationRegex = /(^\$\$[\s\S]*?^\$\$)(?:\s*\{#((?:eq|eqn)-[^}]+)\})?/gm;
     let eqMatch;
     while ((eqMatch = equationRegex.exec(remainingText)) !== null) {
         const fullBlock = eqMatch[0].trim();
-        let key = `__EQ_BLOCK_${blockOrder.length}__`; // Default key
-        
-        // The label is in the second capturing group, the key in the third
-        if (eqMatch[3]) {
-            key = eqMatch[3];
-        }
+        const key = eqMatch[2] || `__EQ_BLOCK_${blockOrder.length}__`;
 
         blockMap.set(key, fullBlock);
         blockOrder.push(key);
