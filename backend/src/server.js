@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
+const SQLiteStore = require('connect-sqlite3')(session);
 const passport = require('./core/auth'); // Our passport config
 const fs = require('fs');
 const path = require('path');
@@ -32,6 +33,11 @@ app.use((req, res, next) => {
 // Session Middleware
 app.use(
   session({
+    store: new SQLiteStore({
+      db: 'quartorium.db',
+      dir: './backend/db',
+      concurrentDB: true
+    }),
     secret: process.env.SESSION_SECRET || 'fallback-secret-key-for-development-only',
     resave: false,
     saveUninitialized: false,
@@ -39,7 +45,7 @@ app.use(
       httpOnly: true,
       secure: false, // Set to false for development (http)
       sameSite: 'lax', // Allow cross-site requests
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     },
   })
 );
