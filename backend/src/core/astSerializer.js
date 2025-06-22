@@ -280,6 +280,34 @@ function serializeInlines(inlines, { citeMap, figMap }) {
         console.warn(`Could not resolve figure reference: rid="${rid}", label="${label}"`);
         return `[UNKNOWN_FIGURE]`;
       }
+      case 'tableReference': {
+        const { originalKey, rid, label } = inlineNode.attrs;
+        if (originalKey) {
+          return `@${originalKey}`;
+        }
+        if (rid) {
+          const extractedKey = rid.replace(/-nb-article$/, '');
+          if (extractedKey.startsWith('tbl-')) {
+            return `@${extractedKey}`;
+          }
+        }
+        console.warn(`Could not resolve table reference: rid="${rid}", label="${label}"`);
+        return `[UNKNOWN_TABLE]`;
+      }
+      case 'equationReference': {
+        const { originalKey, rid, label } = inlineNode.attrs;
+        if (originalKey) {
+          return `@${originalKey}`;
+        }
+        if (rid) {
+          const extractedKey = rid.replace(/-nb-article$/, '');
+          if (extractedKey.startsWith('eq-')) {
+            return `@${extractedKey}`;
+          }
+        }
+        console.warn(`Could not resolve equation reference: rid="${rid}", label="${label}"`);
+        return `[UNKNOWN_EQUATION]`;
+      }
       default:
         console.warn(`Unhandled inline node type: ${inlineNode.type}`);
         return inlineNode.text || '';
@@ -312,6 +340,57 @@ function serializeBlock(node, blockMap, refMaps) {
       if (language === 'bibliography') {
           console.log('Skipping bibliography block');
           return ''; // Do not render the bibliography block.
+      }
+      
+      // Handle LaTeX blocks
+      if (language === 'latex') {
+        console.log(`Serializing LaTeX block: key=${blockKey}`);
+        // Reconstruct the block with a potential label
+        const label = blockKey ? ` {#eq-${blockKey}}` : '';
+        return `$$
+${code}
+$$${label}`;
+      }
+      
+      // Handle tables that were not in the blockMap
+      if (htmlOutput && htmlOutput.includes('<table')) {
+          const caption = figCaption ? `\n\n: ${figCaption} {#${blockKey}}` : '';
+          // This is a very basic reconstruction. A proper HTML-to-Markdown
+          // converter would be needed for complex tables.
+          let markdownTable = '';
+          const tableRegex = /<table.*?>([\s\S]*?)<\/table>/i;
+          const theadRegex = /<thead.*?>([\s\S]*?)<\/thead>/i;
+          const tbodyRegex = /<tbody.*?>([\s\S]*?)<\/tbody>/i;
+          const trRegex = /<tr.*?>([\s\S]*?)<\/tr>/g;
+          const thRegex = /<th.*?>([\s\S]*?)<\/th>/g;
+          const tdRegex = /<td.*?>([\s\S]*?)<\/td>/g;
+
+          const tableMatch = htmlOutput.match(tableRegex);
+          if (tableMatch) {
+              const tableContent = tableMatch[1];
+              const headMatch = tableContent.match(theadRegex);
+              const bodyMatch = tableContent.match(tbodyRegex);
+
+              if (headMatch) {
+                  const headerRowMatch = headMatch[1].match(trRegex);
+                  if (headerRowMatch) {
+                      const headers = [...headerRowMatch[0].matchAll(thRegex)].map(m => m[1].trim());
+                      markdownTable += `| ${headers.join(' | ')} |\n`;
+                      markdownTable += `|${headers.map(() => '---').join('|')}|\n`;
+                  }
+              }
+
+              if (bodyMatch) {
+                  const bodyRowsMatch = bodyMatch[1].match(trRegex);
+                  if (bodyRowsMatch) {
+                      bodyRowsMatch.forEach(rowHtml => {
+                          const cells = [...rowHtml.matchAll(tdRegex)].map(m => m[1].trim());
+                          markdownTable += `| ${cells.join(' | ')} |\n`;
+                      });
+                  }
+              }
+          }
+          return markdownTable.trim() + caption;
       }
       
       // Handle metadata blocks - use the YAML block from the original file
@@ -379,6 +458,13 @@ function serializeBlock(node, blockMap, refMaps) {
       // If we can't reconstruct anything meaningful, log a warning but don't fail
       console.warn(`Could not reconstruct QMD block for key: ${blockKey || 'undefined'}`);
       return '';
+    }
+    case 'code_block': {
+        // This is a standard tiptap code block, not a quarto one.
+        // It might be used for simple, non-executable code.
+        const lang = node.attrs.language || '';
+        const code = node.content ? node.content[0].text : '';
+        return '```' + lang + '\n' + code + '\n' + '```';
     }
     default:
       console.warn(`Unhandled block node type: ${node.type}`);

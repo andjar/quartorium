@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { NodeViewWrapper } from '@tiptap/react';
+import { NodeViewWrapper, NodeViewContent } from '@tiptap/react';
+import 'katex/dist/katex.min.css';
+import { BlockMath } from 'react-katex';
 import './QuartoBlockNodeView.css';
 
 // Helper to format a single author
@@ -32,13 +34,26 @@ const formatReference = (ref) => {
   return text;
 };
 
-const QuartoBlockNodeView = ({ node }) => {
+const QuartoBlockNodeView = ({ node, updateAttributes, editor }) => {
   // Destructure all potential attributes
-  const { code, language, htmlOutput, figId, figCaption, figLabel, metadata, bibliography } = node.attrs;
+  const {
+    code,
+    language,
+    htmlOutput,
+    figId,
+    figCaption,
+    figLabel,
+    metadata,
+    bibliography,
+    blockKey
+  } = node.attrs;
+
+  const { isSelected } = editor;
+
   const [isCodeVisible, setIsCodeVisible] = useState(false);
 
   // If metadata is present, render the metadata view.
-  if (metadata) {
+  if (language === 'metadata' && metadata) {
     const { title, authors } = metadata;
     return (
       <NodeViewWrapper className="quarto-block-wrapper metadata-block">
@@ -96,6 +111,17 @@ const QuartoBlockNodeView = ({ node }) => {
               ))}
             </ul>
           </div>
+        </div>
+      </NodeViewWrapper>
+    );
+  }
+
+  // Render LaTeX block
+  if (language === 'latex' && code) {
+    return (
+      <NodeViewWrapper className="quarto-block-node-view">
+        <div className="quarto-block-content latex-content">
+          <BlockMath math={code} />
         </div>
       </NodeViewWrapper>
     );

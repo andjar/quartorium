@@ -7,6 +7,8 @@ import debounce from 'lodash.debounce';
 import QuartoBlock from '../components/editor/QuartoBlock';
 import Citation from '../components/editor/Citation';
 import FigureReference from '../components/editor/FigureReference';
+import TableReference from '../components/editor/TableReference.jsx';
+import EquationReference from '../components/editor/EquationReference.jsx';
 import CommentMark, { commentHighlightPluginKey } from '../components/editor/CommentMark';
 import CommentSidebar from '../components/editor/CommentSidebar';
 import FloatingCommentButton from '../components/editor/FloatingCommentButton';
@@ -99,6 +101,8 @@ function EditorPage() {
       QuartoBlock,
       Citation,
       FigureReference,
+      TableReference,
+      EquationReference,
       CommentMark.configure({
         onCommentClick: (id) => {
           setActiveCommentId(id);

@@ -283,9 +283,16 @@ function processFig(figEl, repoId, codeContent, language, commitHash, docFilepat
     // Extract figure label from caption or ID
     const figLabel = figId || '';
     
-    // Extract the image HTML from the figure element
+    // Try to extract the image HTML from the figure element
     let htmlOutput = '';
     
+    // Check for a table first
+    const tableWrapEl = figEl.querySelector('table-wrap');
+    if (tableWrapEl) {
+        console.log('Found table-wrap element, using its content.');
+        htmlOutput = tableWrapEl.innerHTML; // This will contain the <table>...</table>
+    }
+
     // Debug: Log the figure element structure
     console.log('Processing figure element:', figEl.outerHTML);
     
@@ -295,7 +302,7 @@ function processFig(figEl, repoId, codeContent, language, commitHash, docFilepat
     const inlineGraphicEl = figEl.querySelector('inline-graphic');
     
     // Try graphic element first
-    if (graphicEl) {
+    if (!htmlOutput && graphicEl) {
         console.log('Found graphic element:', graphicEl.outerHTML);
         const href = graphicEl.getAttribute('xlink:href') || graphicEl.getAttribute('href');
         if (href) {
@@ -362,7 +369,7 @@ function processFig(figEl, repoId, codeContent, language, commitHash, docFilepat
  * It now accepts blockMap to add a 'blockKey'.
  * Enhanced to handle more JATS formats from Quarto.
  */
-function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFilepath) {
+function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFilepath, level = 1) {
     const pmNodes = [];
 
     nodes.forEach(node => {
@@ -392,7 +399,7 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                 case 'p':
                     pmNodes.push({
                         type: 'paragraph',
-                        content: transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath)
+                        content: transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath, level)
                     });
                     break;
                 case 'xref':
@@ -409,8 +416,8 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                         // For citations, use the display text but keep the original key for reference
                         let citationKey = textContent;
                         
-                        // Remove any extra parentheses or brackets that JATS might have added
-                        citationKey = citationKey.replace(/^\(+\[?/, '').replace(/\]?\)+$/, '');
+                        // Remove any extra parentheses or brackets that JATS might have added, and trailing punctuation
+                        citationKey = citationKey.replace(/^\(+\[?/, '').replace(/[?\]\)]+$/, '');
                         
                         console.log(`Cleaned citation key: "${citationKey}" from "${textContent}"`);
                         
@@ -439,7 +446,7 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                         console.log(`Cleaned figure label: "${figLabel}" from "${textContent}"`);
                         
                         // Extract the original figure key from the rid for internal reference
-                        const extractedKey = rid.replace(/^fig-/, '').replace(/-nb-article$/, '');
+                        const extractedKey = rid.replace(/-nb-article$/, '');
                         console.log(`Extracted figure key from rid: ${extractedKey}`);
                         
                         // Use the display text for the label, but store the original key in attrs
@@ -450,6 +457,30 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                                 rid: rid, 
                                 label: figLabel,  // Display text
                                 originalKey: extractedKey  // Original key for serialization
+                            },
+                        });
+                    } else if (rid && rid.startsWith('tbl-')) {
+                        console.log(`Found table reference: ${rid}`);
+                        const tableLabel = textContent.replace(/^@?\{?/, '').replace(/\}?$/, '');
+                        const extractedKey = rid.replace(/-nb-article$/, '');
+                        pmNodes.push({
+                            type: 'tableReference',
+                            attrs: { 
+                                rid: rid, 
+                                label: tableLabel,
+                                originalKey: extractedKey
+                            },
+                        });
+                    } else if (rid && rid.startsWith('eq-')) {
+                        console.log(`Found equation reference: ${rid}`);
+                        const eqLabel = textContent.replace(/^@?\{?/, '').replace(/\}?$/, '');
+                        const extractedKey = rid.replace(/-nb-article$/, '');
+                        pmNodes.push({
+                            type: 'equationReference',
+                            attrs: { 
+                                rid: rid, 
+                                label: eqLabel,
+                                originalKey: extractedKey
                             },
                         });
                     } else if ((refType === 'null' || refType === null || !refType) && rid && rid.startsWith('fig-')) {
@@ -555,13 +586,42 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                         if (titleEl) {
                             pmNodes.push({
                                 type: 'heading',
-                                attrs: { level: 2 },
+                                attrs: { level: level },
                                 content: [{ type: 'text', text: cleanText(titleEl.textContent) }]
                             });
                             titleEl.remove();
                         }
-                        pmNodes.push(...transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath));
+                        pmNodes.push(...transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath, level + 1));
                     }
+                    break;
+                case 'styled-content':
+                    console.log('Found styled-content, checking for equation');
+                    const dispFormula = el.querySelector('disp-formula');
+                    if (dispFormula) {
+                        const texMath = dispFormula.querySelector('tex-math');
+                        if (texMath) {
+                            const latex = texMath.textContent.trim();
+                            const eqId = el.id || '';
+                            const blockKey = eqId.replace(/-nb-article$/, '');
+                            pmNodes.push({
+                                type: 'quartoBlock',
+                                attrs: {
+                                    code: latex,
+                                    language: 'latex',
+                                    htmlOutput: '',
+                                    figId: eqId,
+                                    figCaption: '',
+                                    figLabel: '',
+                                    metadata: null,
+                                    blockKey: blockMap.has(blockKey) ? blockKey : null
+                                }
+                            });
+                            // Since we processed this, we don't need to process children.
+                            break; 
+                        }
+                    }
+                    // If not a formula we care about, fall through to process children
+                    pmNodes.push(...transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath, level));
                     break;
                 case 'fig':
                     console.log('Found standalone figure element');
@@ -603,7 +663,7 @@ function transformBodyNodes(nodes, blockMap, repoId, context, commitHash, docFil
                     break;
                 default:
                     // Recursively process other elements
-                    pmNodes.push(...transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath));
+                    pmNodes.push(...transformBodyNodes(el.childNodes, blockMap, repoId, context, commitHash, docFilepath, level));
                     break;
             }
         }
