@@ -46,7 +46,7 @@ function ReviewPage() {
         oldValue={diffData?.mainContent}
         newValue={diffData?.collabContent}
         splitView={true}
-        compareMethod="diffLines"
+        compareMethod="diffWords"
       />
     </div>
   );
