@@ -88,17 +88,17 @@ router.get('/:repoId/qmd-files', async (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!repo) return res.status(404).json({ error: 'Repository not found' });
 
-    // --- FIX: DEFINE THE DIRECTORY PATHS FIRST ---
     const projectDir = path.join(REPOS_DIR, repo.full_name);
     const url = `https://github.com/${repo.full_name}.git`;
-    // --- END OF FIX ---
 
     try {
+      console.log(`Cloning/updating ${repo.full_name} to ${projectDir}...`);
+
       // Clone will do nothing if the repo already exists
       await git.clone({
         fs,
         http,
-        dir: projectDir, // Use projectDir
+        dir: projectDir,
         url,
         singleBranch: true,
         depth: 1,
@@ -109,10 +109,11 @@ router.get('/:repoId/qmd-files', async (req, res) => {
       await git.pull({
         fs,
         http,
-        dir: projectDir, // Use projectDir
+        dir: projectDir,
         ref: repo.main_branch || 'main',
         singleBranch: true,
-        author: { name: 'Quartorium Fetcher' }, // Author is required for pull
+        author: { name: 'Quartorium Fetcher' },
+        onAuth: () => ({ username: req.user.github_token }), // Auth needed for private repos
       });
       console.log(`Pulled latest changes for ${repo.full_name}`);
 
@@ -137,9 +138,10 @@ router.get('/:repoId/qmd-files', async (req, res) => {
       };
 
       const qmdFiles = findQmdFiles(projectDir);
+      console.log(`Found ${qmdFiles.length} .qmd files in ${repo.full_name}`);
       res.json(qmdFiles);
     } catch (error) {
-      console.error('Git operation failed:', error);
+      console.error('Git operation failed:', error.message, error.code);
       res.status(500).json({ error: 'Failed to clone or read repository.' });
     }
   });
