@@ -48,8 +48,8 @@ router.post('/', async (req, res) => {
     if (url.hostname !== 'github.com') {
       throw new Error('Not a GitHub URL');
     }
-    // Cleans up path, e.g., /user/repo.git -> user/repo
-    const full_name = url.pathname.slice(1).replace(/\.git$/, '');
+    // Cleans up path, e.g., /user/repo.git/ -> user/repo
+    const full_name = url.pathname.slice(1).replace(/\/+$/, '').replace(/\.git$/, '');
 
     // Use the user's saved token to fetch repo details from the GitHub API
     const githubResponse = await axios.get(`https://api.github.com/repos/${full_name}`, {
@@ -58,9 +58,9 @@ router.post('/', async (req, res) => {
 
     const repoData = githubResponse.data;
     const { id, name, private: is_private, default_branch } = repoData;
-    
+
     const sql = 'INSERT INTO repositories (user_id, github_repo_id, name, full_name, is_private, main_branch) VALUES (?, ?, ?, ?, ?, ?)';
-    db.run(sql, [req.user.id, id, name, full_name, is_private, default_branch], function(err) {
+    db.run(sql, [req.user.id, id, name, full_name, is_private, default_branch], function (err) {
       if (err) {
         // This is likely a UNIQUE constraint violation if the repo is already added
         console.error('DB error inserting repo:', err);
@@ -69,7 +69,15 @@ router.post('/', async (req, res) => {
       res.status(201).json({ id: this.lastID, name, full_name, main_branch: default_branch });
     });
   } catch (error) {
-    console.error("Error adding repo:", error.response ? error.response.data : error.message);
+    if (error.response) {
+      console.error("GitHub API error:", {
+        status: error.response.status,
+        message: error.response.data?.message,
+        documentation_url: error.response.data?.documentation_url
+      });
+    } else {
+      console.error("Error adding repo:", error.message);
+    }
     res.status(404).json({ error: 'Repository not found or you do not have access.' });
   }
 });
@@ -112,12 +120,12 @@ router.get('/:repoId/qmd-files', async (req, res) => {
       const findQmdFiles = (startPath) => {
         let results = [];
         if (!fs.existsSync(startPath)) return results;
-        
+
         const files = fs.readdirSync(startPath);
         for (const file of files) {
           const filename = path.join(startPath, file);
           if (file === '.git') continue;
-          
+
           const stat = fs.lstatSync(filename);
           if (stat.isDirectory()) {
             results = results.concat(findQmdFiles(filename));
