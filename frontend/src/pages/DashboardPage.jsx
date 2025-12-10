@@ -43,9 +43,9 @@ function DashboardPage() {
 
       const doc = await res.json();
       if (!doc || doc.id === undefined) {
-          console.error("Invalid document data received from /api/docs/get-or-create:", doc);
-          alert("Error preparing share modal: Could not retrieve valid document information.");
-          return;
+        console.error("Invalid document data received from /api/docs/get-or-create:", doc);
+        alert("Error preparing share modal: Could not retrieve valid document information.");
+        return;
       }
       setSharingFile({ docId: doc.id, filepath, repoId });
     } catch (error) {
@@ -107,9 +107,17 @@ function DashboardPage() {
       .catch(err => console.error("Failed to fetch qmd files", err))
       .finally(() => setIsLoadingFiles(false));
   };
-  
-  const handleLogout = () => {
-    window.location.href = 'http://localhost:8000/api/auth/logout';
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include'
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+    navigate('/');
   };
 
   if (loading) return <div className="dashboard-loading">Loading dashboard...</div>;
@@ -146,9 +154,9 @@ function DashboardPage() {
           <div className="dashboard-repos-section">
             <h4 className="dashboard-section-title">My Repositories</h4>
             {repos.map((repo) => (
-              <div 
-                key={repo.id} 
-                onClick={() => handleSelectRepo(repo)} 
+              <div
+                key={repo.id}
+                onClick={() => handleSelectRepo(repo)}
                 className={`dashboard-repo-item ${selectedRepo?.id === repo.id ? 'selected' : ''}`}
               >
                 <strong>{repo.full_name}</strong>
@@ -165,17 +173,17 @@ function DashboardPage() {
                   <ul className="dashboard-file-list">
                     {qmdFiles.map((file) => (
                       <li key={file} className="dashboard-file-item">
-                        <Link 
+                        <Link
                           to={`/editor/${selectedRepo.id}/${encodeURIComponent(file)}`}
                           className="dashboard-file-link"
                         >
                           {file}
                         </Link>
-                        <button 
+                        <button
                           className="dashboard-share-button"
                           onClick={() => openShareModal(selectedRepo.id, file)}
                         >
-                            Share
+                          Share
                         </button>
                       </li>
                     ))}
@@ -190,13 +198,13 @@ function DashboardPage() {
         </div>
       </main>
       {sharingFile && (
-          <ShareModal 
-            userId={user.id}
-            docId={sharingFile.docId} 
-            docFilepath={sharingFile.filepath} 
-            repoId={sharingFile.repoId} 
-            onClose={() => setSharingFile(null)} 
-          />
+        <ShareModal
+          userId={user.id}
+          docId={sharingFile.docId}
+          docFilepath={sharingFile.filepath}
+          repoId={sharingFile.repoId}
+          onClose={() => setSharingFile(null)}
+        />
       )}
     </div>
   );
