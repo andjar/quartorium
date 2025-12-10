@@ -52,9 +52,26 @@ You must have the following tools installed directly on your system:
 3.  **Set up environment variables:**
     Copy the example environment file. The default settings with SQLite should work out of the box for local development. You will still need to add GitHub API keys to enable login.
     ```bash
-    cp .env.example .env
+    cp backend/.env.example backend/.env
     ```
     To get your GitHub keys, create a new GitHub OAuth App in your developer settings.
+
+    #### Setting up GitHub OAuth
+
+    1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+    2. In the left sidebar, click **"OAuth Apps"** (not "GitHub Apps")
+    3. Click **"New OAuth App"**
+    4. Fill in the form:
+       - **Application name**: `Quartorium (dev)` (or any name you prefer)
+       - **Homepage URL**: `http://localhost:5173`
+       - **Authorization callback URL**: `http://localhost:8000/api/auth/github/callback`
+    5. Click **"Register application"**
+    6. Copy the **Client ID** to `GITHUB_CLIENT_ID` in your `backend/.env`
+    7. Click **"Generate a new client secret"**, then copy it to `GITHUB_CLIENT_SECRET`
+
+    The app requests these OAuth scopes: `user:email` (to identify you) and `repo` (to access your repositories).
+
+Note: For the backend to start successfully you must set the GitHub OAuth environment variables in backend/.env (GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET). If these are not present the authentication routes will fail and the app may not start depending on your local configuration.
 
 4.  **Run the application:**
     You will need two separate terminal windows or tabs.
