@@ -1,4 +1,4 @@
-require('dotenv').config(); 
+require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
@@ -14,9 +14,9 @@ const PORT = 8000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Middleware
-app.use(cors({ 
-  origin: [FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173'], 
-  credentials: true 
+app.use(cors({
+  origin: [FRONTEND_URL, 'http://localhost:5173'],
+  credentials: true
 })); // Allow requests from multiple frontend ports
 app.use(express.json());
 
@@ -92,9 +92,9 @@ app.get('/api/auth/test', (req, res) => {
 });
 
 app.post('/api/auth/logout', (req, res, next) => {
-  req.logout(function(err) {
+  req.logout(function (err) {
     if (err) { return next(err); }
-    res.redirect('/');
+    res.json({ success: true });
   });
 });
 
@@ -127,14 +127,14 @@ app.post('/api/reset', (req, res) => {
       } else {
         console.log('Database connection closed.');
       }
-      
+
       // Delete the database file
       const dbPath = path.join(__dirname, 'db', 'quartorium.db');
       if (fs.existsSync(dbPath)) {
         fs.unlinkSync(dbPath);
         console.log('✅ Database file deleted.');
       }
-      
+
       // Empty the cache folder
       const cachePath = path.join(__dirname, '..', 'cache');
       if (fs.existsSync(cachePath)) {
@@ -149,7 +149,7 @@ app.post('/api/reset', (req, res) => {
         });
         console.log('✅ Cache folder emptied.');
       }
-      
+
       // Empty the repos folder
       const reposPath = path.join(__dirname, '..', 'repos');
       if (fs.existsSync(reposPath)) {
@@ -164,21 +164,21 @@ app.post('/api/reset', (req, res) => {
         });
         console.log('✅ Repos folder emptied.');
       }
-      
+
       // Reinitialize the database
       require('./db/sqlite');
-      
-      res.json({ 
-        success: true, 
-        message: 'Reset completed successfully. Database deleted and cache/repos folders emptied.' 
+
+      res.json({
+        success: true,
+        message: 'Reset completed successfully. Database deleted and cache/repos folders emptied.'
       });
     });
   } catch (error) {
     console.error('Error during reset:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: 'Failed to reset the system',
-      details: error.message 
+      details: error.message
     });
   }
 });
