@@ -6,7 +6,7 @@ const http = require('isomorphic-git/http/node'); // Not used yet, but good to h
 const crypto = require('crypto');
 
 // --- Constants ---
-const API_BASE_URL = 'http://localhost:3000/api/docs'; // Assuming server runs on port 3000
+const API_BASE_URL = 'http://localhost:8000/api/docs'; // Backend runs on port 8000
 const REPOS_DIR = path.join(__dirname, '../repos'); // Relative to backend/test
 // CACHE_DIR is the main cache directory.
 // CACHE_DIR_RENDERED_DOCS is a subdirectory for the JSON outputs of rendering.
@@ -138,16 +138,16 @@ describe('Document Rendering Cache Integration Tests', () => {
     await fs.rm(TEST_REPO_PATH, { recursive: true, force: true });
     // Clean up specific cache for this test run to be tidy
     const assetCacheDirForRepo = path.join(CACHE_DIR, 'assets', MOCK_REPO_ID);
-    try { await fs.rm(assetCacheDirForRepo, { recursive: true, force: true }); } catch (e) { if (e.code !== 'ENOENT') console.error("Error cleaning MOCK_REPO_ID asset cache in afterAll", e)}
+    try { await fs.rm(assetCacheDirForRepo, { recursive: true, force: true }); } catch (e) { if (e.code !== 'ENOENT') console.error("Error cleaning MOCK_REPO_ID asset cache in afterAll", e) }
 
     try {
-        const renderedDocFiles = await fs.readdir(CACHE_DIR_RENDERED_DOCS);
-        for (const file of renderedDocFiles) {
-            if (file.startsWith(MOCK_REPO_ID)) {
-                await fs.unlink(path.join(CACHE_DIR_RENDERED_DOCS, file));
-            }
+      const renderedDocFiles = await fs.readdir(CACHE_DIR_RENDERED_DOCS);
+      for (const file of renderedDocFiles) {
+        if (file.startsWith(MOCK_REPO_ID)) {
+          await fs.unlink(path.join(CACHE_DIR_RENDERED_DOCS, file));
         }
-    } catch (e) { if (e.code !== 'ENOENT') console.error("Error cleaning MOCK_REPO_ID doc cache in afterAll", e)}
+      }
+    } catch (e) { if (e.code !== 'ENOENT') console.error("Error cleaning MOCK_REPO_ID doc cache in afterAll", e) }
   });
 
   it('Test 1: Cache Miss and Initial Cache Creation', async () => {
@@ -232,7 +232,7 @@ describe('Document Rendering Cache Integration Tests', () => {
     // 1. Request to ensure initial cache is there
     await getDocView(MOCK_REPO_ID, TEST_DOC_FILENAME);
     try { await fs.access(firstCacheFile); } catch (e) {
-        throw new Error(`Initial cache file ${firstCacheFile} was not created.`);
+      throw new Error(`Initial cache file ${firstCacheFile} was not created.`);
     }
 
     // 2. Modify the document and commit
@@ -251,9 +251,9 @@ describe('Document Rendering Cache Integration Tests', () => {
 
     // Check for the new rendered doc cache file
     try {
-        await fs.access(secondCacheFile);
+      await fs.access(secondCacheFile);
     } catch (e) {
-        throw new Error(`New rendered doc cache file ${secondCacheFile} was not created after commit.`);
+      throw new Error(`New rendered doc cache file ${secondCacheFile} was not created after commit.`);
     }
 
     // Check for new asset cache directory and file existence
@@ -298,7 +298,7 @@ describe('Document Rendering Cache Integration Tests', () => {
     let response = await getDocView(MOCK_REPO_ID, TEST_DOC_FILENAME);
     expect(response.status).toBe(200);
     try { await fs.access(mainBranchCacheFile); } catch (e) {
-        throw new Error(`Main branch cache file ${mainBranchCacheFile} was not created.`);
+      throw new Error(`Main branch cache file ${mainBranchCacheFile} was not created.`);
     }
 
     // 2. Create and checkout a new branch, modify doc, commit
@@ -314,7 +314,7 @@ describe('Document Rendering Cache Integration Tests', () => {
     expect(response.status).toBe(200);
     // Add content check for feature branch specific content if possible
     try { await fs.access(featureBranchCacheFile); } catch (e) {
-        throw new Error(`Feature branch cache file ${featureBranchCacheFile} was not created.`);
+      throw new Error(`Feature branch cache file ${featureBranchCacheFile} was not created.`);
     }
     const mainCacheStatBefore = await fs.stat(mainBranchCacheFile);
 
@@ -362,7 +362,7 @@ if (require.main === module) {
 }
 
 module.exports = {
-    // Can export functions if needed by an external runner
+  // Can export functions if needed by an external runner
 };
 
 // Basic expect implementation for standalone demo (very simplified)
@@ -402,38 +402,38 @@ global.beforeEach = (fn) => { if (global.testContext.currentSuite) global.testCo
 global.afterAll = (fn) => { if (global.testContext.currentSuite) global.testContext.currentSuite.afterAll.push(fn); };
 
 async function reallyRunTestsManual() {
-    for (const suite of global.testContext.tests) {
-        console.log(`\n--- Running Suite: ${suite.name} ---`);
-        for (const beforeAllFn of suite.beforeAll) await beforeAllFn();
-        for (const test of suite.tests) {
-            console.log(`  IT: ${test.name}`);
-            for (const beforeEachFn of suite.beforeEach) await beforeEachFn();
-            try {
-                await test.fn();
-                console.log(`    PASSED: ${test.name}`);
-            } catch (e) {
-                console.error(`    FAILED: ${test.name}`, e.message, e.stack ? e.stack.split('\n')[1].trim() : '');
-            }
-        }
-        for (const afterAllFn of suite.afterAll) await afterAllFn();
+  for (const suite of global.testContext.tests) {
+    console.log(`\n--- Running Suite: ${suite.name} ---`);
+    for (const beforeAllFn of suite.beforeAll) await beforeAllFn();
+    for (const test of suite.tests) {
+      console.log(`  IT: ${test.name}`);
+      for (const beforeEachFn of suite.beforeEach) await beforeEachFn();
+      try {
+        await test.fn();
+        console.log(`    PASSED: ${test.name}`);
+      } catch (e) {
+        console.error(`    FAILED: ${test.name}`, e.message, e.stack ? e.stack.split('\n')[1].trim() : '');
+      }
     }
+    for (const afterAllFn of suite.afterAll) await afterAllFn();
+  }
 }
 
 // Self-execute if not in a proper test environment
 if (require.main === module) {
-    console.log("Attempting to run tests with simplified manual runner...");
-    // This will manually execute the describe blocks now that they are defined.
-    // Need to re-require or ensure the describe calls happen after these definitions.
-    // This is getting hacky; a real test runner is much preferred.
-    // For now, I'll assume a test runner like Jest will pick up the file.
-    // If I were to make this truly self-executable for the demo, I'd put all `describe` calls
-    // into a main async function and call it here.
-    // For now, the goal is to provide the test *logic*.
-    console.log("To execute, use a test runner like Jest: `npx jest backend/test/cache.integration.test.js`");
-    console.log("Or, if you have Jest installed globally/locally: `jest backend/test/cache.integration.test.js`");
-    // As a fallback for this tool, I'll try to run it manually.
-    // This requires the `describe` calls to be re-evaluated or for this to be structured differently.
-    // The `create_file_with_block` tool doesn't allow re-running parts of the script.
-    // So, this manual runner won't work as is.
-    // The primary deliverable is the test suite structure and logic.
+  console.log("Attempting to run tests with simplified manual runner...");
+  // This will manually execute the describe blocks now that they are defined.
+  // Need to re-require or ensure the describe calls happen after these definitions.
+  // This is getting hacky; a real test runner is much preferred.
+  // For now, I'll assume a test runner like Jest will pick up the file.
+  // If I were to make this truly self-executable for the demo, I'd put all `describe` calls
+  // into a main async function and call it here.
+  // For now, the goal is to provide the test *logic*.
+  console.log("To execute, use a test runner like Jest: `npx jest backend/test/cache.integration.test.js`");
+  console.log("Or, if you have Jest installed globally/locally: `jest backend/test/cache.integration.test.js`");
+  // As a fallback for this tool, I'll try to run it manually.
+  // This requires the `describe` calls to be re-evaluated or for this to be structured differently.
+  // The `create_file_with_block` tool doesn't allow re-running parts of the script.
+  // So, this manual runner won't work as is.
+  // The primary deliverable is the test suite structure and logic.
 }

@@ -15,7 +15,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Middleware
 app.use(cors({ 
-  origin: [FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173'], 
+  origin: [FRONTEND_URL, 'http://localhost:5173'], 
   credentials: true 
 })); // Allow requests from multiple frontend ports
 app.use(express.json());
