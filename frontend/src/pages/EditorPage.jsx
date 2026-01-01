@@ -12,7 +12,6 @@ import EquationReference from '../components/editor/EquationReference.jsx';
 import CommentMark, { commentHighlightPluginKey } from '../components/editor/CommentMark';
 import CommentSidebar from '../components/editor/CommentSidebar';
 import FloatingCommentButton from '../components/editor/FloatingCommentButton';
-import SaveStatus from '../components/editor/SaveStatus';
 import SuggestionsViewer from '../components/SuggestionsViewer';
 import './EditorPage.css';
 
@@ -30,7 +29,6 @@ function EditorPage() {
   const [docId, setDocId] = useState(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const commentsRef = useRef(comments);
-  const [isEditorEnabled, setIsEditorEnabled] = useState(true);
 
   // Update ref whenever comments change
   useEffect(() => {
@@ -392,7 +390,6 @@ function EditorPage() {
           <button 
             onClick={createEmptyComment} 
             style={{ margin: '1rem' }}
-            disabled={!isEditorEnabled}
           >
             Add Comment
           </button>
@@ -407,7 +404,7 @@ function EditorPage() {
           <button
             onClick={handleCommit}
             style={{ marginLeft: '1rem' }}
-            disabled={!baseCommitHash || status.includes('Saving') || status.includes('Committing...') || !isEditorEnabled}
+            disabled={!baseCommitHash || status.includes('Saving') || status.includes('Committing...')}
           >
             Commit
           </button>
@@ -417,11 +414,12 @@ function EditorPage() {
       <div className="editor-main-area">
         {/* Left Sidebar for Author Tools */}
         <div className="collaboration-sidebar">
-          {/* Save Status */}
-          <SaveStatus 
-            status={status}
-            baseCommitHash={baseCommitHash}
-          />
+          <div className="status-section">
+            <p className="status-text">{status}</p>
+            {baseCommitHash && (
+              <p className="commit-hash">Base: {baseCommitHash.substring(0, 7)}</p>
+            )}
+          </div>
           
           <div className="author-info">
             <h4>Author Tools</h4>
@@ -448,12 +446,10 @@ function EditorPage() {
 
         <main className="editor-content-area">
           {error ? <p style={{color: 'red'}}>{error}</p> : <EditorContent editor={editor} />}
-          {isEditorEnabled && (
-            <FloatingCommentButton 
-              editor={editor} 
-              onAddComment={createEmptyComment}
-            />
-          )}
+          <FloatingCommentButton 
+            editor={editor} 
+            onAddComment={createEmptyComment}
+          />
         </main>
         
         <CommentSidebar

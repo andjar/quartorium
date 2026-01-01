@@ -12,9 +12,6 @@ import EquationReference from '../components/editor/EquationReference.jsx';
 import CommentMark, { commentHighlightPluginKey } from '../components/editor/CommentMark';
 import CommentSidebar from '../components/editor/CommentSidebar';
 import FloatingCommentButton from '../components/editor/FloatingCommentButton';
-import BranchLockStatus from '../components/editor/BranchLockStatus';
-import ChangeIndicator from '../components/editor/ChangeIndicator';
-import SaveStatus from '../components/editor/SaveStatus';
 import './EditorPage.css';
 
 function CollabEditorPage() {
@@ -25,9 +22,6 @@ function CollabEditorPage() {
   const [comments, setComments] = useState([]);
   const [activeCommentId, setActiveCommentId] = useState(null);
   const [collaboratorLabel, setCollaboratorLabel] = useState(null);
-  const [lockStatus, setLockStatus] = useState(null);
-  const [isEditorEnabled, setIsEditorEnabled] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
   const commentsRef = useRef(comments);
 
   // Update ref whenever comments change
@@ -60,27 +54,6 @@ function CollabEditorPage() {
         console.error('Failed to fetch share link info:', error);
       });
   }, [shareToken]);
-
-  // Handle lock status changes
-  const handleLockChange = (newLockStatus) => {
-    console.log('Lock status changed:', newLockStatus);
-    console.log('Collaborator label:', collaboratorLabel);
-    console.log('isLockedByMe:', newLockStatus.isLockedByMe);
-    console.log('isLocked:', newLockStatus.isLocked);
-    
-    setLockStatus(newLockStatus);
-    const hasLock = newLockStatus.isLockedByMe || !newLockStatus.isLocked;
-    console.log('hasLock calculated as:', hasLock);
-    setIsEditorEnabled(hasLock);
-    
-    if (!hasLock && newLockStatus.isLocked) {
-      setStatus('Document is being edited by another collaborator');
-    } else if (newLockStatus.isLockedByMe) {
-      setStatus('You are editing - changes will be saved automatically');
-    } else {
-      setStatus('Document is available for editing');
-    }
-  };
 
   // Placeholder for current user - replace with actual user context/auth later
   const currentUser = { 
@@ -186,12 +159,9 @@ function CollabEditorPage() {
       type: 'doc',
       content: []
     },
-    editable: isEditorEnabled,
+    editable: true,
     onUpdate: ({ editor }) => {
-      if (!isEditorEnabled) return;
-      
       console.log('Editor update triggered');
-      setIsEditing(true); // Mark as editing when user types
       setStatus('Unsaved');
       saveDocument(editor.getJSON());
 
@@ -226,25 +196,7 @@ function CollabEditorPage() {
       console.log('Editor is editable:', editor.isEditable);
       console.log('Editor content:', editor.getJSON());
     },
-  }, [isEditorEnabled]);
-
-  // Update editor editable state when isEditorEnabled changes
-  useEffect(() => {
-    if (editor && !editor.isDestroyed) {
-      console.log('Setting editor editable to:', isEditorEnabled);
-      editor.setEditable(isEditorEnabled);
-    }
-  }, [isEditorEnabled, editor]);
-
-  // Reset editing state after user stops typing
-  useEffect(() => {
-    if (isEditing) {
-      const timeoutId = setTimeout(() => {
-        setIsEditing(false);
-      }, 2000); // Reset after 2 seconds of no typing
-      return () => clearTimeout(timeoutId);
-    }
-  }, [isEditing]);
+  }, []);
 
   // 👇 --- THIS IS THE FINAL, CORRECT useEffect --- 👇
   useEffect(() => {
@@ -437,14 +389,13 @@ function CollabEditorPage() {
           <button 
             onClick={createEmptyComment} 
             style={{ margin: '1rem' }}
-            disabled={!isEditorEnabled}
           >
             Add Comment
           </button>
           <button
             onClick={handleCollabCommit}
             style={{ marginRight: '2rem' }}
-            disabled={!baseCommitHash || status.includes('Saving') || status.includes('Committing...') || !isEditorEnabled}
+            disabled={!baseCommitHash || status.includes('Saving') || status.includes('Committing...')}
           >
             Commit
           </button>
@@ -452,37 +403,27 @@ function CollabEditorPage() {
       </header>
       
       <div className="editor-main-area">
-        {/* Left Sidebar for Collaboration Status */}
+        {/* Left Sidebar for Collaboration Info */}
         <div className="collaboration-sidebar">
-          {/* Save Status */}
-          <SaveStatus 
-            status={status}
-            baseCommitHash={baseCommitHash}
-          />
+          <div className="status-section">
+            <p className="status-text">{status}</p>
+            {baseCommitHash && (
+              <p className="commit-hash">Base: {baseCommitHash.substring(0, 7)}</p>
+            )}
+          </div>
           
-          {/* Simplified Branch Lock Status */}
-          <BranchLockStatus 
-            shareToken={shareToken}
-            collaboratorLabel={collaboratorLabel}
-            onLockChange={handleLockChange}
-            isEditing={isEditing}
-          />
-          
-          {/* Recent Changes Indicator */}
-          <ChangeIndicator 
-            shareToken={shareToken}
-            collaboratorLabel={collaboratorLabel}
-          />
+          <div className="collaborator-info">
+            <h4>Your Branch</h4>
+            <p>You are editing your personal collaboration branch. Your changes won't affect others until merged.</p>
+          </div>
         </div>
 
         <main className="editor-content-area">
           {error ? <p style={{color: 'red'}}>{error}</p> : <EditorContent editor={editor} />}
-          {isEditorEnabled && (
-            <FloatingCommentButton 
-              editor={editor} 
-              onAddComment={createEmptyComment}
-            />
-          )}
+          <FloatingCommentButton 
+            editor={editor} 
+            onAddComment={createEmptyComment}
+          />
         </main>
         
         <CommentSidebar

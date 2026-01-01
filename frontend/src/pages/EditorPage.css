@@ -200,6 +200,52 @@
   margin-top: 0.5em;
 }
 
+/* Status Section in Sidebar */
+.status-section {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.status-section .status-text {
+  margin: 0 0 4px 0;
+  color: #495057;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.status-section .commit-hash {
+  margin: 0;
+  color: #6c757d;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+/* Collaborator Info in Sidebar */
+.collaborator-info {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.collaborator-info h4 {
+  margin: 0 0 8px 0;
+  color: #495057;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.collaborator-info p {
+  margin: 0;
+  color: #6c757d;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 /* Author Info in Sidebar */
 .author-info {
   background: white;
