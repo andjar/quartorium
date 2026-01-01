@@ -164,6 +164,31 @@ const createLiveDocumentsTable = () => {
 
 createLiveDocumentsTable();
 
+// Create comment_reactions table for cross-branch feedback
+const createCommentReactionsTable = () => {
+  const sql = `
+    CREATE TABLE IF NOT EXISTS comment_reactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      comment_id TEXT NOT NULL,
+      source_share_token TEXT NOT NULL,
+      reactor_share_token TEXT NOT NULL,
+      reactor_label TEXT,
+      reaction_type TEXT NOT NULL CHECK (reaction_type IN ('thumbs_up', 'thumbs_down')),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(comment_id, source_share_token, reactor_share_token)
+    )
+  `;
+  db.run(sql, (err) => {
+    if (err) {
+      console.error('Error creating comment_reactions table:', err.message);
+    } else {
+      console.log('✅ Comment reactions table is ready.');
+    }
+  });
+};
+
+createCommentReactionsTable();
+
 // Migration function to add main_branch column to existing repositories
 const migrateReposTable = () => {
   // Check if main_branch column exists

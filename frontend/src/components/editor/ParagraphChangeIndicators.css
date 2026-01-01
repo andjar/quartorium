@@ -1,0 +1,185 @@
+/* ==========================================================================
+   Paragraph Change Indicators - Margin Dots
+   Position: In the left padding area of ProseMirror editor
+   ========================================================================== */
+
+.paragraph-change-indicators {
+  position: absolute;
+  /* Position at start of ProseMirror (accounting for editor-content-area's 40px padding) */
+  left: 40px;
+  top: 32px; /* Account for editor-content-area's top padding */
+  bottom: 32px;
+  width: 24px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.change-indicator-row {
+  position: absolute;
+  left: 4px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  pointer-events: auto;
+}
+
+.change-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.change-dot:hover {
+  transform: scale(1.6);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+}
+
+/* Change type variations */
+.change-dot.change-added {
+  opacity: 1;
+}
+
+.change-dot.change-removed {
+  opacity: 0.7;
+}
+
+.change-dot.change-modified {
+  opacity: 1;
+}
+
+/* ==========================================================================
+   Diff Popup
+   ========================================================================== */
+
+.diff-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(2px);
+}
+
+.diff-popup {
+  background: var(--color-bg-secondary, #ffffff);
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow: hidden;
+  animation: popupIn 0.15s ease;
+}
+
+@keyframes popupIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.diff-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border, #e5e5e5);
+}
+
+.diff-popup-header h5 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary, #171717);
+}
+
+.close-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-size: 20px;
+  color: var(--color-text-muted, #a3a3a3);
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.close-btn:hover {
+  background: var(--color-bg-tertiary, #f5f5f5);
+  color: var(--color-text-primary, #171717);
+}
+
+.diff-popup-content {
+  padding: 20px;
+}
+
+.diff-type {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.diff-type-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.diff-type-badge.added {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.diff-type-badge.removed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.diff-type-badge.modified {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.diff-location {
+  font-size: 12px;
+  color: var(--color-text-muted, #a3a3a3);
+}
+
+.diff-preview {
+  background: var(--color-bg-tertiary, #f7f7f8);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.diff-preview p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-primary, #171717);
+  font-family: var(--font-serif, 'Newsreader', serif);
+}
+
+.diff-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary, #737373);
+  font-style: italic;
+}

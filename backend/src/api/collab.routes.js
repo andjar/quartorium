@@ -17,6 +17,89 @@ const { extractCommentsAppendix } = require('../core/commentUtils');
 const router = express.Router();
 const REPOS_DIR = path.join(__dirname, '../../repos');
 
+// IMPORTANT: These routes must come BEFORE the /:shareToken routes
+// because Express matches routes in order
+
+// POST /api/collab/reaction - Add or update a reaction to a comment
+router.post('/reaction', async (req, res) => {
+  console.log('POST /api/collab/reaction body:', req.body);
+  const { commentId, sourceShareToken, reactorShareToken, reactionType } = req.body;
+
+  if (!commentId || !sourceShareToken || !reactorShareToken || !reactionType) {
+    console.log('Missing required fields:', { commentId, sourceShareToken, reactorShareToken, reactionType });
+    return res.status(400).json({ 
+      error: 'Missing required fields.',
+      received: { commentId, sourceShareToken, reactorShareToken, reactionType }
+    });
+  }
+
+  if (!['thumbs_up', 'thumbs_down'].includes(reactionType)) {
+    return res.status(400).json({ error: 'Invalid reaction type. Must be thumbs_up or thumbs_down.' });
+  }
+
+  try {
+    // Get reactor label
+    const reactorInfo = await new Promise((resolve, reject) => {
+      db.get('SELECT collaborator_label FROM share_links WHERE share_token = ?', 
+        [reactorShareToken], (err, row) => {
+          if (err) return reject(err);
+          resolve(row);
+        });
+    });
+
+    const reactorLabel = reactorInfo ? reactorInfo.collaborator_label : 'Unknown';
+
+    // Upsert the reaction
+    const sql = `
+      INSERT INTO comment_reactions (comment_id, source_share_token, reactor_share_token, reactor_label, reaction_type)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(comment_id, source_share_token, reactor_share_token) 
+      DO UPDATE SET reaction_type = excluded.reaction_type, created_at = CURRENT_TIMESTAMP
+    `;
+    
+    await new Promise((resolve, reject) => {
+      db.run(sql, [commentId, sourceShareToken, reactorShareToken, reactorLabel, reactionType], function(err) {
+        if (err) return reject(err);
+        resolve(this.changes);
+      });
+    });
+
+    res.json({ message: 'Reaction saved successfully', reactionType });
+
+  } catch (error) {
+    console.error('Error saving reaction:', error);
+    res.status(500).json({ error: error.message || 'Failed to save reaction.' });
+  }
+});
+
+// DELETE /api/collab/reaction - Remove a reaction
+router.delete('/reaction', async (req, res) => {
+  const { commentId, sourceShareToken, reactorShareToken } = req.body;
+
+  if (!commentId || !sourceShareToken || !reactorShareToken) {
+    return res.status(400).json({ error: 'Missing required fields.' });
+  }
+
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        'DELETE FROM comment_reactions WHERE comment_id = ? AND source_share_token = ? AND reactor_share_token = ?',
+        [commentId, sourceShareToken, reactorShareToken],
+        function(err) {
+          if (err) return reject(err);
+          resolve(this.changes);
+        }
+      );
+    });
+
+    res.json({ message: 'Reaction removed successfully' });
+
+  } catch (error) {
+    console.error('Error removing reaction:', error);
+    res.status(500).json({ error: error.message || 'Failed to remove reaction.' });
+  }
+});
+
 // GET /api/collab/:shareToken - Load the document for a collaborator
 router.get('/:shareToken', async (req, res) => {
   const { shareToken } = req.params;
@@ -574,6 +657,245 @@ router.get('/:shareToken/info', async (req, res) => {
   } catch (error) {
     console.error('Error getting share link info:', error);
     res.status(404).json({ error: error.message });
+  }
+});
+
+// Helper function to compute paragraph hashes for change detection
+function computeParagraphHashes(prosemirrorJson) {
+  const hashes = [];
+  if (!prosemirrorJson || !prosemirrorJson.content) return hashes;
+  
+  prosemirrorJson.content.forEach((node, index) => {
+    // Get text content from node
+    let textContent = '';
+    if (node.content) {
+      node.content.forEach(child => {
+        if (child.text) textContent += child.text;
+        else if (child.content) {
+          child.content.forEach(grandchild => {
+            if (grandchild.text) textContent += grandchild.text;
+          });
+        }
+      });
+    }
+    
+    // Simple hash: first 50 chars + length
+    const hash = textContent.trim().substring(0, 50) + '_' + textContent.length;
+    hashes.push({
+      index,
+      type: node.type,
+      hash: hash,
+      preview: textContent.trim().substring(0, 100)
+    });
+  });
+  
+  return hashes;
+}
+
+// GET /api/collab/:shareToken/other-branches - Get comments from sibling branches
+router.get('/:shareToken/other-branches', async (req, res) => {
+  const { shareToken } = req.params;
+
+  try {
+    // 1. Get info about the current share link
+    const currentLink = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT s.doc_id, s.share_token, s.collaborator_label, s.collab_branch_name,
+               d.filepath, r.full_name
+        FROM share_links s 
+        JOIN documents d ON s.doc_id = d.id 
+        JOIN repositories r ON d.repo_id = r.id 
+        WHERE s.share_token = ?
+      `;
+      db.get(sql, [shareToken], (err, row) => {
+        if (err || !row) return reject(new Error('Invalid share link.'));
+        resolve(row);
+      });
+    });
+
+    // 2. Get current user's document content (for comparison)
+    let currentParagraphHashes = [];
+    const currentLiveDoc = await new Promise((resolve) => {
+      db.get('SELECT prosemirror_json FROM live_documents WHERE share_token = ?', 
+        [shareToken], (err, row) => {
+          if (err || !row) resolve(null);
+          else resolve(row);
+        });
+    });
+    
+    if (currentLiveDoc && currentLiveDoc.prosemirror_json) {
+      try {
+        const currentJson = JSON.parse(currentLiveDoc.prosemirror_json);
+        currentParagraphHashes = computeParagraphHashes(currentJson);
+      } catch (e) {
+        console.warn('Could not parse current live doc for comparison:', e);
+      }
+    }
+
+    // 3. Get all OTHER share links for the same document
+    const siblingLinks = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT share_token, collaborator_label, collab_branch_name 
+        FROM share_links 
+        WHERE doc_id = ? AND share_token != ?
+      `;
+      db.all(sql, [currentLink.doc_id, shareToken], (err, rows) => {
+        if (err) return reject(new Error('Could not query sibling share links.'));
+        resolve(rows || []);
+      });
+    });
+
+    // 4. For each sibling, get their comments and paragraph changes
+    const branches = [];
+    
+    for (const sibling of siblingLinks) {
+      let comments = [];
+      let source = 'none';
+      let paragraphChanges = [];
+      
+      // Check live_documents first (unsaved changes)
+      const liveDoc = await new Promise((resolve) => {
+        db.get('SELECT prosemirror_json, comments_json, updated_at FROM live_documents WHERE share_token = ?', 
+          [sibling.share_token], (err, row) => {
+            if (err || !row) resolve(null);
+            else resolve(row);
+          });
+      });
+      
+      if (liveDoc) {
+        // Parse comments
+        if (liveDoc.comments_json) {
+          try {
+            const liveComments = JSON.parse(liveDoc.comments_json);
+            if (liveComments.length > 0) {
+              comments = liveComments;
+              source = 'live';
+            }
+          } catch (e) {
+            console.warn(`Failed to parse live comments for ${sibling.share_token}:`, e);
+          }
+        }
+        
+        // Compare paragraphs to find changes
+        if (liveDoc.prosemirror_json && currentParagraphHashes.length > 0) {
+          try {
+            const siblingJson = JSON.parse(liveDoc.prosemirror_json);
+            const siblingHashes = computeParagraphHashes(siblingJson);
+            
+            // Find paragraphs that differ
+            const maxLen = Math.max(currentParagraphHashes.length, siblingHashes.length);
+            for (let i = 0; i < maxLen; i++) {
+              const current = currentParagraphHashes[i];
+              const sibling_para = siblingHashes[i];
+              
+              if (!current && sibling_para) {
+                paragraphChanges.push({ 
+                  index: i, 
+                  changeType: 'added', 
+                  nodeType: sibling_para.type,
+                  preview: sibling_para.preview 
+                });
+              } else if (current && !sibling_para) {
+                paragraphChanges.push({ 
+                  index: i, 
+                  changeType: 'removed', 
+                  nodeType: current.type,
+                  preview: current.preview 
+                });
+              } else if (current && sibling_para && current.hash !== sibling_para.hash) {
+                paragraphChanges.push({ 
+                  index: i, 
+                  changeType: 'modified', 
+                  nodeType: sibling_para.type,
+                  preview: sibling_para.preview 
+                });
+              }
+            }
+          } catch (e) {
+            console.warn('Could not compare paragraphs:', e);
+          }
+        }
+      }
+      
+      // If no live comments, try to get from the committed branch
+      if (comments.length === 0) {
+        try {
+          const projectDir = path.join(REPOS_DIR, currentLink.full_name);
+          await git.checkout({ fs: fsForGit, dir: projectDir, ref: sibling.collab_branch_name });
+          const fullFilepath = path.join(projectDir, currentLink.filepath);
+          const qmdContent = await fs.readFile(fullFilepath, 'utf8');
+          const { comments: extractedComments } = extractCommentsAppendix(qmdContent);
+          if (extractedComments.length > 0) {
+            comments = extractedComments;
+            source = 'branch';
+          }
+        } catch (error) {
+          console.warn(`Could not read branch ${sibling.collab_branch_name}:`, error.message);
+        }
+      }
+      
+      // Get reaction counts for each comment
+      const commentsWithReactions = await Promise.all(comments.map(async (comment) => {
+        const reactions = await new Promise((resolve) => {
+          const sql = `
+            SELECT reaction_type, COUNT(*) as count, 
+                   GROUP_CONCAT(reactor_label) as reactors
+            FROM comment_reactions 
+            WHERE comment_id = ? AND source_share_token = ?
+            GROUP BY reaction_type
+          `;
+          db.all(sql, [comment.id, sibling.share_token], (err, rows) => {
+            if (err || !rows) resolve({ thumbs_up: 0, thumbs_down: 0, reactors: {} });
+            else {
+              const result = { thumbs_up: 0, thumbs_down: 0, reactors: {} };
+              rows.forEach(row => {
+                result[row.reaction_type] = row.count;
+                result.reactors[row.reaction_type] = row.reactors ? row.reactors.split(',') : [];
+              });
+              resolve(result);
+            }
+          });
+        });
+        
+        // Check if current user has reacted
+        const myReaction = await new Promise((resolve) => {
+          db.get(
+            'SELECT reaction_type FROM comment_reactions WHERE comment_id = ? AND source_share_token = ? AND reactor_share_token = ?',
+            [comment.id, sibling.share_token, shareToken],
+            (err, row) => resolve(row ? row.reaction_type : null)
+          );
+        });
+        
+        return {
+          ...comment,
+          reactions,
+          myReaction
+        };
+      }));
+      
+      branches.push({
+        shareToken: sibling.share_token,
+        collaboratorLabel: sibling.collaborator_label || 'Unknown',
+        branchName: sibling.collab_branch_name,
+        comments: commentsWithReactions,
+        paragraphChanges: paragraphChanges,
+        source,
+        lastUpdated: liveDoc ? liveDoc.updated_at : null
+      });
+    }
+
+    res.json({
+      currentBranch: {
+        shareToken: currentLink.share_token,
+        collaboratorLabel: currentLink.collaborator_label,
+        branchName: currentLink.collab_branch_name
+      },
+      otherBranches: branches
+    });
+
+  } catch (error) {
+    console.error('Error getting other branches:', error);
+    res.status(500).json({ error: error.message || 'Failed to get other branches.' });
   }
 });
 

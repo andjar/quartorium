@@ -12,6 +12,8 @@ import EquationReference from '../components/editor/EquationReference.jsx';
 import CommentMark, { commentHighlightPluginKey } from '../components/editor/CommentMark';
 import CommentSidebar from '../components/editor/CommentSidebar';
 import FloatingCommentButton from '../components/editor/FloatingCommentButton';
+import BranchSuggestionsPanel from '../components/editor/BranchSuggestionsPanel';
+import ParagraphChangeIndicators from '../components/editor/ParagraphChangeIndicators';
 import './EditorPage.css';
 
 function CollabEditorPage() {
@@ -22,6 +24,8 @@ function CollabEditorPage() {
   const [comments, setComments] = useState([]);
   const [activeCommentId, setActiveCommentId] = useState(null);
   const [collaboratorLabel, setCollaboratorLabel] = useState(null);
+  const [paragraphChanges, setParagraphChanges] = useState([]);
+  const editorContainerRef = useRef(null);
   const commentsRef = useRef(comments);
 
   // Update ref whenever comments change
@@ -403,7 +407,7 @@ function CollabEditorPage() {
       </header>
       
       <div className="editor-main-area">
-        {/* Left Sidebar for Collaboration Info */}
+        {/* Left Sidebar - Status and Collaborator Changes */}
         <div className="collaboration-sidebar">
           <div className="status-section">
             <p className="status-text">{status}</p>
@@ -411,14 +415,24 @@ function CollabEditorPage() {
               <p className="commit-hash">Base: {baseCommitHash.substring(0, 7)}</p>
             )}
           </div>
-          
-          <div className="collaborator-info">
-            <h4>Your Branch</h4>
-            <p>You are editing your personal collaboration branch. Your changes won't affect others until merged.</p>
-          </div>
+
+          {/* Other collaborators' text changes (not comments) */}
+          <BranchSuggestionsPanel
+            shareToken={shareToken}
+            collaboratorLabel={collaboratorLabel}
+            onParagraphChanges={(changes) => {
+              setParagraphChanges(changes);
+            }}
+            editor={editor}
+          />
         </div>
 
-        <main className="editor-content-area">
+        <main className="editor-content-area" ref={editorContainerRef}>
+          <ParagraphChangeIndicators 
+            changes={paragraphChanges} 
+            editorRef={editorContainerRef}
+            editor={editor}
+          />
           {error ? <p style={{color: 'red'}}>{error}</p> : <EditorContent editor={editor} />}
           <FloatingCommentButton 
             editor={editor} 
@@ -426,6 +440,7 @@ function CollabEditorPage() {
           />
         </main>
         
+        {/* Right Sidebar - Comments with reactions */}
         <CommentSidebar
           comments={comments}
           setComments={setComments}
@@ -433,6 +448,7 @@ function CollabEditorPage() {
           onCommentSelect={setActiveCommentId}
           currentUser={currentUser}
           onAddComment={addComment}
+          shareToken={shareToken}
         />
       </div>
     </div>
