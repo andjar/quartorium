@@ -39,17 +39,35 @@
   z-index: 100;
 }
 
-/* Change type variations */
+/* Change type variations - distinct shapes/styles */
 .change-dot.change-added {
   opacity: 1;
+  /* Plus indicator - slightly larger with light outline */
+  position: relative;
+}
+
+.change-dot.change-added::before {
+  content: '+';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  font-weight: bold;
+  color: #fff;
+  line-height: 1;
 }
 
 .change-dot.change-removed {
-  opacity: 0.7;
+  opacity: 0.8;
+  /* Outline only for removed */
+  background: transparent !important;
+  border: 2px solid currentColor;
 }
 
 .change-dot.change-modified {
   opacity: 1;
+  /* Filled dot for modified - default style */
 }
 
 /* ==========================================================================

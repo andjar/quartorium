@@ -679,17 +679,146 @@ function computeParagraphHashes(prosemirrorJson) {
       });
     }
     
-    // Simple hash: first 50 chars + length
-    const hash = textContent.trim().substring(0, 50) + '_' + textContent.length;
+    // Content-based hash using first 30 chars (for matching) + full length
+    const trimmedText = textContent.trim();
+    const contentHash = trimmedText.substring(0, 30) + '_' + trimmedText.length;
+    
     hashes.push({
       index,
       type: node.type,
-      hash: hash,
-      preview: textContent.trim().substring(0, 100)
+      contentHash: contentHash,
+      // Also store a "fuzzy" hash using just first few words for looser matching
+      fuzzyHash: trimmedText.split(/\s+/).slice(0, 5).join(' ').toLowerCase(),
+      preview: trimmedText.substring(0, 100),
+      fullText: trimmedText
     });
   });
   
   return hashes;
+}
+
+// Content-based diff: finds actual additions, removals, and modifications
+function computeContentBasedChanges(currentHashes, siblingHashes) {
+  const changes = [];
+  
+  // Create lookup maps by content hash
+  const currentByHash = new Map();
+  const siblingByHash = new Map();
+  
+  currentHashes.forEach(h => {
+    if (!currentByHash.has(h.contentHash)) {
+      currentByHash.set(h.contentHash, []);
+    }
+    currentByHash.get(h.contentHash).push(h);
+  });
+  
+  siblingHashes.forEach(h => {
+    if (!siblingByHash.has(h.contentHash)) {
+      siblingByHash.set(h.contentHash, []);
+    }
+    siblingByHash.get(h.contentHash).push(h);
+  });
+  
+  // Track which paragraphs have been matched
+  const matchedCurrentIndices = new Set();
+  const matchedSiblingIndices = new Set();
+  
+  // First pass: exact content matches (same paragraph, possibly moved)
+  siblingHashes.forEach(siblingPara => {
+    if (currentByHash.has(siblingPara.contentHash)) {
+      const currentMatches = currentByHash.get(siblingPara.contentHash);
+      const unmatched = currentMatches.find(c => !matchedCurrentIndices.has(c.index));
+      if (unmatched) {
+        matchedCurrentIndices.add(unmatched.index);
+        matchedSiblingIndices.add(siblingPara.index);
+        // Same content - no change needed
+      }
+    }
+  });
+  
+  // Second pass: find modifications using fuzzy matching
+  siblingHashes.forEach(siblingPara => {
+    if (matchedSiblingIndices.has(siblingPara.index)) return;
+    
+    // Try to find a paragraph with similar starting content that wasn't matched
+    let bestMatch = null;
+    let bestMatchScore = 0;
+    
+    currentHashes.forEach(currentPara => {
+      if (matchedCurrentIndices.has(currentPara.index)) return;
+      
+      // Check fuzzy hash match
+      if (siblingPara.fuzzyHash && currentPara.fuzzyHash) {
+        const fuzzyMatch = siblingPara.fuzzyHash === currentPara.fuzzyHash;
+        if (fuzzyMatch) {
+          // This is likely a modified version of the same paragraph
+          const score = 2;
+          if (score > bestMatchScore) {
+            bestMatchScore = score;
+            bestMatch = currentPara;
+          }
+        }
+      }
+      
+      // Check if same approximate position (within 2 positions) as fallback
+      if (!bestMatch && Math.abs(siblingPara.index - currentPara.index) <= 2) {
+        // Check if there's some text similarity
+        const sibWords = new Set(siblingPara.fullText.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+        const curWords = new Set(currentPara.fullText.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+        let overlap = 0;
+        sibWords.forEach(w => { if (curWords.has(w)) overlap++; });
+        
+        if (sibWords.size > 0 && overlap / sibWords.size > 0.3) {
+          const score = 1;
+          if (score > bestMatchScore) {
+            bestMatchScore = score;
+            bestMatch = currentPara;
+          }
+        }
+      }
+    });
+    
+    if (bestMatch) {
+      // This is a modification
+      matchedCurrentIndices.add(bestMatch.index);
+      matchedSiblingIndices.add(siblingPara.index);
+      changes.push({
+        index: siblingPara.index,
+        changeType: 'modified',
+        nodeType: siblingPara.type,
+        preview: siblingPara.preview
+      });
+    }
+  });
+  
+  // Remaining unmatched in sibling = additions (new content they added)
+  siblingHashes.forEach(siblingPara => {
+    if (!matchedSiblingIndices.has(siblingPara.index)) {
+      changes.push({
+        index: siblingPara.index,
+        changeType: 'added',
+        nodeType: siblingPara.type,
+        preview: siblingPara.preview
+      });
+    }
+  });
+  
+  // Remaining unmatched in current = removals (content they removed)
+  currentHashes.forEach(currentPara => {
+    if (!matchedCurrentIndices.has(currentPara.index)) {
+      changes.push({
+        index: currentPara.index,
+        changeType: 'removed',
+        nodeType: currentPara.type,
+        preview: currentPara.preview
+      });
+    }
+  });
+  
+  // Sort by index for display
+  changes.sort((a, b) => a.index - b.index);
+  
+  return changes;
 }
 
 // GET /api/collab/:shareToken/other-branches - Get comments from sibling branches
@@ -776,41 +905,14 @@ router.get('/:shareToken/other-branches', async (req, res) => {
           }
         }
         
-        // Compare paragraphs to find changes
+        // Compare paragraphs to find changes using content-based matching
         if (liveDoc.prosemirror_json && currentParagraphHashes.length > 0) {
           try {
             const siblingJson = JSON.parse(liveDoc.prosemirror_json);
             const siblingHashes = computeParagraphHashes(siblingJson);
             
-            // Find paragraphs that differ
-            const maxLen = Math.max(currentParagraphHashes.length, siblingHashes.length);
-            for (let i = 0; i < maxLen; i++) {
-              const current = currentParagraphHashes[i];
-              const sibling_para = siblingHashes[i];
-              
-              if (!current && sibling_para) {
-                paragraphChanges.push({ 
-                  index: i, 
-                  changeType: 'added', 
-                  nodeType: sibling_para.type,
-                  preview: sibling_para.preview 
-                });
-              } else if (current && !sibling_para) {
-                paragraphChanges.push({ 
-                  index: i, 
-                  changeType: 'removed', 
-                  nodeType: current.type,
-                  preview: current.preview 
-                });
-              } else if (current && sibling_para && current.hash !== sibling_para.hash) {
-                paragraphChanges.push({ 
-                  index: i, 
-                  changeType: 'modified', 
-                  nodeType: sibling_para.type,
-                  preview: sibling_para.preview 
-                });
-              }
-            }
+            // Use content-based diff instead of index-based
+            paragraphChanges = computeContentBasedChanges(currentParagraphHashes, siblingHashes);
           } catch (e) {
             console.warn('Could not compare paragraphs:', e);
           }
