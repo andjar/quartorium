@@ -1,13 +1,12 @@
 const matter = require('gray-matter');
-const { unified } = require('unified');
-const remarkParse = require('remark-parse').default;
+const { remark } = require('remark');
 const { renderChunk } = require('./quartoRunner');
 const { extractCommentsAppendix } = require('./commentUtils');
 
 async function qmdToProseMirror(qmdString) {
   const { comments, remainingQmdString } = extractCommentsAppendix(qmdString);
   const { data: yaml, content: markdown } = matter(remainingQmdString);
-  const tree = unified().use(remarkParse).parse(markdown);
+  const tree = remark().parse(markdown);
 
   const proseMirrorNodes = [];
 

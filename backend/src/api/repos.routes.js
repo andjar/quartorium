@@ -48,8 +48,8 @@ router.post('/', async (req, res) => {
     if (url.hostname !== 'github.com') {
       throw new Error('Not a GitHub URL');
     }
-    // Cleans up path, e.g., /user/repo.git -> user/repo
-    const full_name = url.pathname.slice(1).replace(/\.git$/, '');
+    // Cleans up path, e.g., /user/repo.git/ -> user/repo
+    const full_name = url.pathname.slice(1).replace(/\/+$/, '').replace(/\.git$/, '');
 
     // Use the user's saved token to fetch repo details from the GitHub API
     const githubResponse = await axios.get(`https://api.github.com/repos/${full_name}`, {
@@ -58,9 +58,9 @@ router.post('/', async (req, res) => {
 
     const repoData = githubResponse.data;
     const { id, name, private: is_private, default_branch } = repoData;
-    
+
     const sql = 'INSERT INTO repositories (user_id, github_repo_id, name, full_name, is_private, main_branch) VALUES (?, ?, ?, ?, ?, ?)';
-    db.run(sql, [req.user.id, id, name, full_name, is_private, default_branch], function(err) {
+    db.run(sql, [req.user.id, id, name, full_name, is_private, default_branch], function (err) {
       if (err) {
         // This is likely a UNIQUE constraint violation if the repo is already added
         console.error('DB error inserting repo:', err);
@@ -69,7 +69,15 @@ router.post('/', async (req, res) => {
       res.status(201).json({ id: this.lastID, name, full_name, main_branch: default_branch });
     });
   } catch (error) {
-    console.error("Error adding repo:", error.response ? error.response.data : error.message);
+    if (error.response) {
+      console.error("GitHub API error:", {
+        status: error.response.status,
+        message: error.response.data?.message,
+        documentation_url: error.response.data?.documentation_url
+      });
+    } else {
+      console.error("Error adding repo:", error.message);
+    }
     res.status(404).json({ error: 'Repository not found or you do not have access.' });
   }
 });
@@ -80,17 +88,17 @@ router.get('/:repoId/qmd-files', async (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!repo) return res.status(404).json({ error: 'Repository not found' });
 
-    // --- FIX: DEFINE THE DIRECTORY PATHS FIRST ---
     const projectDir = path.join(REPOS_DIR, repo.full_name);
     const url = `https://github.com/${repo.full_name}.git`;
-    // --- END OF FIX ---
 
     try {
+      console.log(`Cloning/updating ${repo.full_name} to ${projectDir}...`);
+
       // Clone will do nothing if the repo already exists
       await git.clone({
         fs,
         http,
-        dir: projectDir, // Use projectDir
+        dir: projectDir,
         url,
         singleBranch: true,
         depth: 1,
@@ -101,10 +109,11 @@ router.get('/:repoId/qmd-files', async (req, res) => {
       await git.pull({
         fs,
         http,
-        dir: projectDir, // Use projectDir
+        dir: projectDir,
         ref: repo.main_branch || 'main',
         singleBranch: true,
-        author: { name: 'Quartorium Fetcher' }, // Author is required for pull
+        author: { name: 'Quartorium Fetcher' },
+        onAuth: () => ({ username: req.user.github_token }), // Auth needed for private repos
       });
       console.log(`Pulled latest changes for ${repo.full_name}`);
 
@@ -112,12 +121,12 @@ router.get('/:repoId/qmd-files', async (req, res) => {
       const findQmdFiles = (startPath) => {
         let results = [];
         if (!fs.existsSync(startPath)) return results;
-        
+
         const files = fs.readdirSync(startPath);
         for (const file of files) {
           const filename = path.join(startPath, file);
           if (file === '.git') continue;
-          
+
           const stat = fs.lstatSync(filename);
           if (stat.isDirectory()) {
             results = results.concat(findQmdFiles(filename));
@@ -129,9 +138,10 @@ router.get('/:repoId/qmd-files', async (req, res) => {
       };
 
       const qmdFiles = findQmdFiles(projectDir);
+      console.log(`Found ${qmdFiles.length} .qmd files in ${repo.full_name}`);
       res.json(qmdFiles);
     } catch (error) {
-      console.error('Git operation failed:', error);
+      console.error('Git operation failed:', error.message, error.code);
       res.status(500).json({ error: 'Failed to clone or read repository.' });
     }
   });
