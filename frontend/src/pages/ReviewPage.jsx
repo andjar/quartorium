@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import ReactDiffViewer from 'react-diff-viewer';
+import ReactDiffViewer from 'react-diff-viewer-continued';
 
 function ReviewPage() {
   const { shareToken } = useParams();
@@ -19,7 +19,7 @@ function ReviewPage() {
 
   const handleMerge = () => {
     if (!window.confirm('Are you sure you want to merge these changes? This action cannot be undone.')) {
-        return;
+      return;
     }
     fetch(`/api/docs/merge/${shareToken}`, { method: 'POST', credentials: 'include' })
       .then(res => {

@@ -8,17 +8,14 @@
     "frontend"
   ],
   "scripts": {
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
     "start:backend": "npm run start --workspace=backend",
-    "start:frontend": "npm run dev --workspace=frontend",
-    "install": "npm install --workspaces --if-present"
+    "start:frontend": "npm run dev --workspace=frontend"
   },
   "keywords": [],
   "author": "",
   "license": "GPL-3.0-only",
-  "dependencies": {
-    "@tiptap/extension-link": "^2.14.0"
-  },
   "devDependencies": {
-    "axios": "^1.10.0"
+    "concurrently": "^9.1.2"
   }
 }
