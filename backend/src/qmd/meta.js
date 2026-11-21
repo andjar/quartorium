@@ -69,4 +69,35 @@ function injectMeta(body, meta) {
   return body.replace(/\s*$/, '\n') + '\n<!-- quartorium\n' + encodeJson({ comments: meta.comments }) + '\n-->\n';
 }
 
-module.exports = { extractMeta, injectMeta, emptyMeta, normalizeComment };
+const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+
+/**
+ * Three-way merge of comment threads (by id), for merges between branches.
+ * A thread added on either side is kept; one removed on one side (e.g. a
+ * resolved thread cleaned up when a round finished) stays removed unless the
+ * other side changed it; replies and agreements from both sides are combined.
+ */
+function mergeMeta(base, ours, theirs) {
+  const map = (m) => new Map(((m && m.comments) || []).map((c) => [c.id, c]));
+  const B = map(base), A = map(ours), T = map(theirs);
+  const ids = [...A.keys(), ...[...T.keys()].filter((id) => !A.has(id))];
+  const comments = [];
+  for (const id of ids) {
+    const b = B.get(id), a = A.get(id), t = T.get(id);
+    if (!a || !t) {
+      const only = a || t;
+      if (!b || !same(only, b)) comments.push(only);
+      continue;
+    }
+    if (same(a, t) || (b && same(t, b))) { comments.push(a); continue; }
+    if (b && same(a, b)) { comments.push(t); continue; }
+    const key = (m) => `${m.author}\u0000${m.created}\u0000${m.text}`;
+    const thread = [...a.thread, ...t.thread.filter((m) => !a.thread.some((x) => key(x) === key(m)))];
+    if (thread.every((m) => m.created)) thread.sort((x, y) => (x.created < y.created ? -1 : x.created > y.created ? 1 : 0));
+    const resolved = b && a.resolved === b.resolved ? t.resolved : a.resolved;
+    comments.push({ ...a, thread, resolved, agree: [...new Set([...a.agree, ...t.agree])] });
+  }
+  return { comments };
+}
+
+module.exports = { extractMeta, injectMeta, emptyMeta, normalizeComment, mergeMeta };

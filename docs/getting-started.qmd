@@ -26,8 +26,8 @@ QUARTORIUM_ADMIN_PASSWORD='choose-a-password' npm start
 
 Open <http://localhost:8000> and log in with the admin password.
 
-For development, run `npm run dev:backend` and `npm run dev:frontend` in two terminals and
-open <http://localhost:5173>. Run the tests with `npm test`.
+For development, run `npm run dev` (the backend and the frontend together) and open
+<http://localhost:5173>. Run the tests with `npm test`.
 
 ## Connect a repository
 
@@ -41,8 +41,9 @@ On the admin page, click **Connect a repository** and enter its Git URL. Any Git
 | Your own server | `ssh://git@server/srv/git/paper.git` or a path | – | uses the server's SSH key |
 
 The token is needed for private repositories and to push. Quartorium pushes branches named
-`quartorium/…`. It writes to your main branch only when the lead clicks **Merge into main**
-(see [Git and the paper trail](git.qmd)).
+`quartorium/…`, and keeps your main branch up to date with the review round, so you can
+keep pulling and pushing main from RStudio. This can be switched off per repository, for
+example when main is protected (see [Git and the paper trail](git.qmd#main)).
 
 ## Start your first round
 
@@ -70,6 +71,7 @@ All settings are environment variables.
 | `QUARTORIUM_QUARTO` | `quarto` | Path to the Quarto binary. |
 | `QUARTORIUM_PANDOC` | `quarto pandoc` | Pandoc command, if you want a different one. |
 | `QUARTORIUM_COMMIT_IDLE` | `600` | Seconds without typing after which work in progress is committed (leaving the page commits at once). |
+| `QUARTORIUM_SYNC` | `60` | Seconds between checks of the main branch for new commits (a lead opening the paper also checks). |
 | `QUARTORIUM_PUSH` | `1` | Set to `0` to never push (for trying things out). |
 | `QUARTORIUM_RENDER_TIMEOUT` | `900` | Seconds before a render is stopped. |
 | `QUARTORIUM_COMMITTER_NAME` / `_EMAIL` | `Quartorium` | Committer of every commit. The *author* is always the person. |

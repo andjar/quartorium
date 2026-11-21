@@ -117,9 +117,14 @@ person who wrote each sentence.
 
 ### Keep working in your own editor
 
-You can keep writing in RStudio or VS Code during a round. Push as usual, then choose
-**Round ▾ → Update from main** to bring your new commits into the round. If you changed the
-same lines that the round changed, Quartorium explains the conflict instead of guessing.
+You can keep working in RStudio or VS Code during a round: change code, add figures, edit
+text. Pull at the start of a session, then commit, pull and push as usual. Quartorium takes
+your pushes into the round within a minute, and puts accepted text and comments on main, so
+your next pull brings them. **Round ▾ → Sync with main now** does both at once.
+
+Edits to different paragraphs never get in each other's way. If you changed the same
+paragraph as the round, your version is kept and the other one is attached as a comment.
+See [Working in RStudio during a round](git.qmd#working-in-rstudio-during-a-round).
 
 ### Finish the round
 
@@ -136,20 +141,20 @@ Finishing a round:
 - removes resolved comment threads from the file (they stay in the history) and keeps open
   ones for the next round;
 - leaves undecided suggestions on the reviewers' branches, out of the paper;
-- optionally merges the result into your main branch.
+- puts the result on main (or offers to, if main isn't kept up to date).
 
-### Merge into main
+### Main is kept up to date
 
-**Round ▾ → Merge into main** merges the round's version of the paper into your main branch
-and pushes it. This happens only when Git can merge without conflicts. If main changed the
-same lines, or your Git host protects main, Quartorium tells you which branch to merge with a
-pull request instead. You can merge at the end of a round or at any point during it.
+By default, everything that is committed in the round (accepted suggestions, your edits,
+comments) is put on main automatically, so main is always the latest agreed version of the
+paper. If your main branch is protected, or you prefer to merge yourself, turn off
+**Round ▾ → Keep main up to date**. Then use **Round ▾ → Merge into main**, or a pull request
+from the branch `quartorium/…`. See [Main stays up to date](git.qmd#main).
 
 ### Start the next round
 
 **Round ▾ → Start next round…** starts a new round with the same people and **the same
-links**. It starts from main if the finished round was merged, otherwise from the finished
-round. Everyone sees what changed since their last visit. Earlier rounds stay available
+links**. It starts from main (or from the finished round, if that isn't on main). Everyone sees what changed since their last visit. Earlier rounds stay available
 read-only under **Round ▾ → Earlier rounds**.
 
 ### The history
@@ -161,10 +166,22 @@ reviews and rounds, with who did what. Click an entry to see what it changed, wo
 ![History: each entry opens its changes.](images/history.png)
 :::
 
-## Limits
+## Supported Quarto features {#supported}
 
-- There are no live cursors. Others' suggestions and comments appear within about ten seconds.
-- Locked blocks (code, tables, display equations, callouts and other `:::` blocks,
-  footnote definitions) can't be edited in the browser; comment on them instead.
-- Interactive widgets (htmlwidgets, Observable) are shown as their static output.
-- One `.qmd` file per round. Sections pulled in with `{{{< include >}}}` are shown as locked blocks.
+Quartorium opens any `.qmd` file. Whatever the editor can't change is shown as a *locked*
+block with its rendered output, so a document never comes up blank. Co-authors comment on
+locked blocks instead of editing them.
+
+- **Editable:** paragraphs, headings (labels such as `{#sec-intro}` are kept), bullet and numbered lists (also nested), block quotes, horizontal rules. Bold, italic, strikethrough, underline, superscript, subscript, small caps, links, spans with attributes, line breaks. New citations and cross-references from the paper's bibliography and labels.
+- **Shown as chips in the text** (they can be moved or deleted, not edited): citations and cross-references (as "Smith et al. 2020", "Figure 1"), inline math, inline code such as `` `r nrow(df)` ``, inline shortcodes such as `{{{< meta title >}}}`, footnotes (`^[…]`, `[^1]`), inline images, raw inline HTML or LaTeX.
+- **Shown, locked:** the YAML header (as a title block), code chunks (as their output: figures, tables, printed results; the code under *Show source*), plain code blocks, tables with their captions, display equations, callouts and every other `:::` block (figure and layout divs, panels, `{#refs}`), raw LaTeX/HTML blocks, shortcodes on their own line (`{{{< pagebreak >}}}`, `{{{< include >}}}`), footnote definitions, HTML comments and blocks, definition lists, line blocks.
+- **Not supported:** editing more than one file per round (included files are shown, not edited), Jupyter notebooks (`.ipynb`) and R Markdown (`.Rmd`) as the reviewed file, interactive widgets (htmlwidgets, Observable, Shiny; their static output is shown), live cursors (others' work appears within about ten seconds).
+
+Figures, tables and cross-reference numbers come from a real `quarto render` on the server,
+so the server needs what your code needs (R, Python, packages) unless your project uses
+Quarto's [`freeze`](https://quarto.org/docs/projects/code-execution.html#freeze) and commits
+`_freeze/`. If rendering fails, locked blocks show their source, and the lead sees Quarto's
+error message.
+
+How each of these is stored and written back is explained in
+[How .qmd files are changed](qmd-files.qmd).

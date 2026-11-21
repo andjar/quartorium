@@ -11,7 +11,7 @@ with any Git tool.
 
 | Branch | Contains | Who writes it |
 |---|---|---|
-| your main branch | the paper as you keep it | you, and Quartorium only when the lead clicks **Merge into main** |
+| your main branch | **the paper**: always the latest agreed version | you (from RStudio, VS Code, …) and Quartorium, which keeps it up to date with the round |
 | `quartorium/<paper>-<date>-<id>` | the **round**: the paper as it evolves during review | Quartorium, on behalf of each person |
 | `quartorium/<round>--<name>-<id>` | one **reviewer's** copy, with everything they wrote, accepted or not | Quartorium, on behalf of that reviewer |
 
@@ -34,7 +34,11 @@ gitGraph
     commit id: "Bob's change declined"
     commit id: "Round finished"
     checkout main
-    merge "quartorium/paper-round" id: "Merge into main"
+    commit id: "Lena pushes from RStudio"
+    checkout "quartorium/paper-round"
+    merge main id: "Bring in the latest main"
+    checkout main
+    merge "quartorium/paper-round" id: "main kept up to date"
 ```
 
 ## What is committed, and when
@@ -52,9 +56,10 @@ are saved on the server continuously and shown to others within seconds.
 | A reviewer withdraws their own suggestion | round | `Bob withdrew a change: “…”` | the reviewer |
 | Comment, reply, resolve, reference request | round | `Comment by Anna on “…”: …`, `Reply by Bob: …`, `Anna resolved a comment` | the person |
 | 👍 on a comment | round | bundled into the next commit | – |
-| **Update from main** | round | `Bring in the latest main` (a merge commit) | the lead |
+| Someone pushes to main (checked every minute, and when the lead opens the paper) | round | `Bring in the latest main` (a merge commit) | Quartorium, or the lead with **Sync with main now** |
+| The round has new commits, and main is kept up to date | main | none: main moves to the round's latest commit (a fast-forward) | – |
 | **Finish round** | round | `Review round finished: …` with a summary | the lead |
-| **Merge into main** | main | `Merge review round “…” into main`, or a fast-forward | the lead |
+| **Merge into main** (only when main is *not* kept up to date) | main | the same as above, on request | the lead |
 
 The committer of every commit is "Quartorium". New commits are pushed to the remote within
 about 30 seconds.
@@ -77,34 +82,57 @@ Open comment threads are stored in the `.qmd` itself, in an HTML comment at the 
 branches and merges, and Quarto never renders them. When a round is finished, resolved
 threads are removed from the file, and the commits that added them keep them in the history.
 
-## When to merge into main
+## Main stays up to date {#main}
 
-The round branch is the reviewed version of the paper. Typical patterns:
+Main is the paper. During a round, Quartorium keeps main and the round in step, both ways:
 
-- **At the end of a round** (most common): *Finish round* with *merge into main* ticked.
-  Undecided suggestions stay on the reviewers' branches; everything accepted is in main.
-- **During a round**, to pick up accepted text in your own editor: **Round ▾ → Merge into
-  main**, then `git pull` locally. The round continues from the merged state.
-- **By hand or with a pull request**, for protected main branches or teams that review every
-  merge: merge the branch `quartorium/…` like any other branch.
+- **Your pushes come in.** When you push to main from RStudio or VS Code, Quartorium merges
+  it into the round within a minute, or immediately when you open the paper in Quartorium.
+  Changed code, new figures, new data and edited text all come along, and co-authors see
+  them the next time they open their link.
+- **The round goes out.** Accepted suggestions, your edits in the browser and comments are
+  put on main as they are committed, normally as a fast-forward with no extra merge
+  commits. A `git pull` in RStudio brings all of it, and the comments stay invisible in the
+  rendered paper.
 
-*Merge into main* never forces anything. It is a fast-forward when main hasn't moved, a
-merge commit when Git can combine both sides cleanly, and otherwise a clear message with the
-conflicting files. In that case, use *Update from main* first if the overlap is small, or
-merge with your own tools.
+So nobody has to remember to merge, and your own copy never drifts far from what your
+co-authors are reviewing.
 
-## Updating a round from main
+### Working in RStudio during a round
 
-If you keep writing in your own editor during a round, push to main and click **Round ▾ →
-Update from main**. Quartorium merges main into the round branch. Reviewers' copies follow
-the next time they open their link: their own edits are kept, and where they edited a
-paragraph that also changed on main, the main version wins and their version is kept as an
-*outdated* suggestion. Nothing is lost.
+Work the way you normally do with Git:
+
+1. **Pull** at the start of a work session (RStudio: *Git → Pull*).
+2. Change code, add figures, edit text. **Commit.**
+3. **Pull again, then push.** If Quartorium put something on main in the meantime, Git asks
+   you to pull before you can push, as with any co-author. Git merges it with your commits.
+   That only stops for a decision if you edited the very lines that changed in the round.
+
+Quartorium merges the paper **paragraph by paragraph**, not line by line, and merges comment
+threads separately. Edits to different paragraphs never conflict, even neighbouring ones,
+and neither do code, figures or other files. Quartorium only ever changes the one `.qmd`
+under review.
+
+If you and the round changed **the same paragraph** between two syncs, for example because
+you rewrote a paragraph in RStudio while a co-author's version of it was being accepted,
+**your version from main is kept**. The round's version is attached to that paragraph as a
+comment from Quartorium, so you can compare them and copy from it. Reviewers who were
+editing that paragraph keep their version as an *outdated* suggestion. Nothing is lost, and
+the merge commit records both sides.
+
+### When main is protected, or you'd rather merge yourself
+
+Turn off **Round ▾ → Keep main up to date** for the repository. Your pushes still come into
+the round, but main only changes when you choose **Round ▾ → Merge into main**, or when you
+merge the branch `quartorium/…` with a pull/merge request on your Git host.
+
+If your Git host refuses Quartorium's push to main (a protected branch), Quartorium turns
+the setting off by itself and tells you which branch to merge.
 
 ## Rounds and links
 
-*Start next round* creates a new round branch, from main if the last round was merged into
-it, otherwise from the last round's branch. Each person's link moves to the new round, so
+*Start next round* creates a new round branch, from main if the last round is on main (as it
+is when main is kept up to date), otherwise from the last round's branch. Each person's link moves to the new round, so
 co-authors never need a new link. The finished round keeps a private read-only link for the
 lead (**Round ▾ → Earlier rounds**).
 

@@ -18,6 +18,8 @@ module.exports = {
   committerEmail: process.env.QUARTORIUM_COMMITTER_EMAIL || 'quartorium@localhost',
   /** Seconds without typing after which a draft is committed (leaving the page commits at once). */
   commitIdleSeconds: Number(process.env.QUARTORIUM_COMMIT_IDLE || 600),
+  /** How often (seconds) open rounds check the main branch for new commits and catch up. */
+  syncSeconds: Number(process.env.QUARTORIUM_SYNC || 60),
   /** Address people use to reach this server, for links in e-mails (e.g. https://review.example.org). */
   publicUrl: (process.env.QUARTORIUM_PUBLIC_URL || '').replace(/\/$/, ''),
   /** Optional mail server, e.g. smtp://user:pass@smtp.example.org:587. Unset: no e-mails are sent. */

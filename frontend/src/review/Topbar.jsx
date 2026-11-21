@@ -24,7 +24,7 @@ function FinishReview({ me, changes, comments, onDone, onClose }) {
   );
 }
 
-function FinishRound({ live, onDone, onClose }) {
+function FinishRound({ live, round, onDone, onClose }) {
   const [removeResolved, setRemoveResolved] = useState(true);
   const [merge, setMerge] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -33,7 +33,7 @@ function FinishRound({ live, onDone, onClose }) {
   const open = live.changes.length;
   const openComments = live.comments.filter((c) => !c.resolved).length;
   const resolved = live.comments.filter((c) => c.resolved).length;
-  const submit = async () => { setBusy(true); try { await onDone({ removeResolved, merge }); onClose(); } finally { setBusy(false); } };
+  const submit = async () => { setBusy(true); try { await onDone({ removeResolved, merge: merge && !round.keepMain }); onClose(); } finally { setBusy(false); } };
   return (
     <Modal title="Finish this review round" onClose={onClose} actions={<>
       <button type="button" className="ghost" onClick={onClose}>Cancel</button>
@@ -45,7 +45,9 @@ function FinishRound({ live, onDone, onClose }) {
         <li>{plural(openComments, 'open comment thread')} will stay in the file for the next round.</li>
       </ul>
       {resolved > 0 && <label className="check"><input type="checkbox" checked={removeResolved} onChange={(e) => setRemoveResolved(e.target.checked)} /> Remove the {plural(resolved, 'resolved thread')} from the file (they stay in the history)</label>}
-      <label className="check"><input type="checkbox" checked={merge} onChange={(e) => setMerge(e.target.checked)} /> Then merge the result into the main branch</label>
+      {round.keepMain
+        ? <p className="hint">The result goes to {round.baseBranch}, like everything else in this round.</p>
+        : <label className="check"><input type="checkbox" checked={merge} onChange={(e) => setMerge(e.target.checked)} /> Then merge the result into {round.baseBranch}</label>}
       <p className="hint">Afterwards, reviewers can still read the paper but not change it. You can start the next round with the same people and links.</p>
     </Modal>
   );
@@ -94,7 +96,7 @@ function EarlierRounds({ token, onClose }) {
   );
 }
 
-function RoundMenu({ data, onAction }) {
+function RoundMenu({ round, onAction }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -102,18 +104,20 @@ function RoundMenu({ data, onAction }) {
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, []);
-  const finished = data.round.status !== 'open';
+  const finished = round.status !== 'open';
+  const base = round.baseBranch;
   const item = (label, kind, hint) => <button type="button" onClick={() => { setOpen(false); onAction(kind); }}><span>{label}</span>{hint && <small>{hint}</small>}</button>;
   return (
     <div className="menu" ref={ref}>
       <button type="button" className="ghost small" onClick={() => setOpen((o) => !o)}>Round ▾</button>
       {open && (
         <div className="menu-items">
-          {!finished && item(`Update from ${data.round.baseBranch}`, 'sync', 'Bring in what you pushed from your own editor')}
-          {item(`Merge into ${data.round.baseBranch}`, 'merge', 'Put the accepted text into the main branch')}
+          {!finished && item(`Sync with ${base} now`, 'sync', round.keepMain ? `Bring in what you pushed, and update ${base}` : 'Bring in what you pushed from your own editor')}
+          {!round.keepMain && item(`Merge into ${base}`, 'merge', `Put this round's text on ${base}`)}
+          {item(`${round.keepMain ? '✓ ' : ''}Keep ${base} up to date`, 'keep-main', round.keepMain ? `Accepted text and comments go to ${base} automatically` : `Off: ${base} only changes when you merge`)}
           {!finished && item('Finish round…', 'finish', 'Close the round for reviewers')}
-          {finished && !data.round.nextRoundId && item('Start next round…', 'next', 'Same people, same links')}
-          {finished && !data.round.nextRoundId && item('Reopen round', 'reopen')}
+          {finished && !round.nextRoundId && item('Start next round…', 'next', 'Same people, same links')}
+          {finished && !round.nextRoundId && item('Reopen round', 'reopen')}
           {item('Earlier rounds…', 'earlier')}
         </div>
       )}
@@ -141,13 +145,13 @@ export default function Topbar({ data, live, saveState, token, queueCount, onQue
           {data.me.name} · {isLead ? 'Lead author' : 'Reviewer'}
         </span>
         {isLead && open && <button type="button" className="small" disabled={!queueCount} onClick={onQueue} title="Go through suggestions and comments one by one">Review {queueCount ? `(${queueCount})` : ''}</button>}
-        {isLead && <RoundMenu data={data} onAction={action} busy={busy} />}
+        {isLead && <RoundMenu round={live.round || data.round} onAction={action} busy={busy} />}
         {!isLead && open && (data.me.status === 'done'
           ? <button type="button" className="ghost small done" onClick={() => setModal('review')} title="The lead knows you are done. You can still make changes.">✓ Review sent</button>
           : <button type="button" className="small" onClick={() => setModal('review')}>Finish my review</button>)}
       </div>
       {modal === 'review' && <FinishReview me={data.me} changes={live.changes} comments={live.comments} onDone={onFinishReview} onClose={() => setModal(null)} />}
-      {modal === 'finish' && <FinishRound live={live} onDone={(o) => onRoundAction('finish', o)} onClose={() => setModal(null)} />}
+      {modal === 'finish' && <FinishRound live={live} round={live.round || data.round} onDone={(o) => onRoundAction('finish', o)} onClose={() => setModal(null)} />}
       {modal === 'next' && <NextRound data={data} live={live} onDone={(o) => onRoundAction('next', o)} onClose={() => setModal(null)} />}
       {modal === 'earlier' && <EarlierRounds token={token} onClose={() => setModal(null)} />}
     </header>

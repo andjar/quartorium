@@ -64,13 +64,13 @@ who made them, on any Git host: Codeberg/Forgejo, GitLab, GitHub or your own ser
 ## A review round at a glance
 
 ::: {.steps}
-1. **You write** in RStudio or VS Code and push, as usual.
+1. **You write** in RStudio or VS Code and push, as usual, also during a round.
 2. **Start a round** on a `.qmd` from the admin page.
 3. **Send the links** to your co-authors, or let Quartorium e-mail them.
 4. **Everyone works in parallel.** Edits become suggestions that everyone can see.
 5. **Reviewers finish** with a note, like sending back the Word file.
 6. **You decide** in the review queue: accept, reject, next.
-7. **Finish the round** and merge it into main.
+7. **Finish the round.** Main has been kept up to date all along.
 8. **Next round:** the same people, with the same links.
 :::
 

@@ -81,6 +81,11 @@ const ADDED_COLUMNS = {
   rounds: {
     finished_at: 'TEXT', merged_at: 'TEXT', merged_commit: 'TEXT',
     previous_round_id: 'INTEGER', next_round_id: 'INTEGER',
+    main_checked_at: 'TEXT', // last time the main branch was checked for new commits
+  },
+  projects: {
+    keep_main: 'INTEGER NOT NULL DEFAULT 1', // put the rounds' commits on main automatically
+    main_error: 'TEXT', // why main could not be updated (protected branch, conflict)
   },
 };
 
