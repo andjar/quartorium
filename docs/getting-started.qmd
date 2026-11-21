@@ -1,0 +1,111 @@
+---
+title: "Getting started"
+---
+
+Quartorium is a small Node.js server. One installation serves a whole research group: the
+person who runs it connects the group's repositories, and everyone else only ever uses links.
+
+## Requirements
+
+| | Version | Why |
+|---|---|---|
+| [Node.js](https://nodejs.org/) | 22.13 or newer | Runs the server; uses Node's built-in SQLite (no native modules to compile). |
+| [Git](https://git-scm.com/) | 2.38 or newer | All version control; `merge-tree --write-tree` is used to merge without a working copy. |
+| [Quarto](https://quarto.org/docs/get-started/) | 1.4 or newer | Renders figures and tables; its bundled Pandoc converts text. |
+| R / Python | as your papers need | Only for running the papers' code. Not needed if you commit Quarto's `_freeze` folder (see below). |
+
+## Install and run
+
+```bash
+git clone https://github.com/andjar/quartorium.git
+cd quartorium
+npm install
+npm run build                         # builds the browser app into frontend/dist
+QUARTORIUM_ADMIN_PASSWORD='choose-a-password' npm start
+```
+
+Open <http://localhost:8000> and log in with the admin password.
+
+For development, run `npm run dev:backend` and `npm run dev:frontend` in two terminals and
+open <http://localhost:5173>. Run the tests with `npm test`.
+
+## Connect a repository
+
+On the admin page, click **Connect a repository** and enter its Git URL. Any Git host works:
+
+| Host | URL example | Username | Token |
+|---|---|---|---|
+| Codeberg / Forgejo / Gitea | `https://codeberg.org/you/paper.git` | your account name | Settings → Applications → access token with repository read/write |
+| GitLab (incl. university instances) | `https://gitlab.example.org/group/paper.git` | `oauth2` | personal or project access token with `write_repository` |
+| GitHub | `https://github.com/you/paper.git` | anything | fine-grained token with *Contents: read & write* |
+| Your own server | `ssh://git@server/srv/git/paper.git` or a path | – | uses the server's SSH key |
+
+The token is needed for private repositories and to push. Quartorium pushes branches named
+`quartorium/…`. It writes to your main branch only when the lead clicks **Merge into main**
+(see [Git and the paper trail](git.qmd)).
+
+## Start your first round
+
+1. On the admin page, click **New review round** next to the repository, pick the `.qmd` file
+   and enter the lead author's name (usually yourself).
+2. Click **Open as lead**. This is your lead link; bookmark it.
+3. In the **People** tab, add your co-authors. **Invite by e-mail** opens your own mail
+   program with a short message and their personal link (or the server sends it, if mail is
+   configured).
+
+That's it. The [user guide](guide.qmd) explains what happens next.
+
+## Configuration
+
+All settings are environment variables.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `QUARTORIUM_ADMIN_PASSWORD` | *(unset: admin pages off)* | Password for connecting repositories and starting rounds. Links keep working without it. |
+| `PORT` | `8000` | Port to listen on. |
+| `QUARTORIUM_DATA` | `backend/data` | Database, bare clones of the repositories, and the render cache. Back this up. |
+| `QUARTORIUM_PUBLIC_URL` | *(from the request)* | Address people use, e.g. `https://review.example.org`; used for links in e-mails. |
+| `QUARTORIUM_SMTP_URL` | *(unset: no e-mail)* | Mail server, e.g. `smtp://user:pass@smtp.example.org:587`. Without it, invitations open the lead's mail program instead. |
+| `QUARTORIUM_MAIL_FROM` | `Quartorium <quartorium@localhost>` | Sender of e-mails. |
+| `QUARTORIUM_QUARTO` | `quarto` | Path to the Quarto binary. |
+| `QUARTORIUM_PANDOC` | `quarto pandoc` | Pandoc command, if you want a different one. |
+| `QUARTORIUM_COMMIT_IDLE` | `600` | Seconds without typing after which work in progress is committed (leaving the page commits at once). |
+| `QUARTORIUM_PUSH` | `1` | Set to `0` to never push (for trying things out). |
+| `QUARTORIUM_RENDER_TIMEOUT` | `900` | Seconds before a render is stopped. |
+| `QUARTORIUM_COMMITTER_NAME` / `_EMAIL` | `Quartorium` | Committer of every commit. The *author* is always the person. |
+| `QUARTORIUM_SECRET` | *(generated)* | Signs the admin session cookie; generated into the data folder if unset. |
+
+## Running it for a group
+
+- **Put it behind HTTPS.** Run Quartorium on localhost and put a reverse proxy (Caddy,
+  nginx, Apache) in front of it with a certificate. Links are keys, so they must not travel
+  over plain HTTP.
+- **Keep it running** with systemd, a container, or your platform's process manager.
+  Stopping the server cleanly (`SIGTERM`) commits all pending work first.
+- **Avoid running code on the server** if you like: use Quarto's
+  [`freeze`](https://quarto.org/docs/projects/code-execution.html#freeze) in the paper's
+  project and commit the `_freeze` folder. Quarto then uses the stored results, and the
+  server needs neither R nor Python. Otherwise, install what the papers need, as you would
+  on your own machine.
+- **Back up** the data folder. Everything that matters long-term is also in Git, but the
+  database holds work that was not committed yet and the links.
+
+A minimal systemd unit:
+
+```ini
+[Unit]
+Description=Quartorium
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/quartorium
+Environment=QUARTORIUM_ADMIN_PASSWORD=change-me
+Environment=QUARTORIUM_PUBLIC_URL=https://review.example.org
+Environment=QUARTORIUM_DATA=/var/lib/quartorium
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+User=quartorium
+
+[Install]
+WantedBy=multi-user.target
+```

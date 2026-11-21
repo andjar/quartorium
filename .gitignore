@@ -79,3 +79,8 @@ frontend/.vite
 
 coverage
 .nyc_output
+# ===================================================================
+# Documentation website (quarto render docs)
+# ===================================================================
+docs/_site/
+docs/.quarto/

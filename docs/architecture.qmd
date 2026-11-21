@@ -1,0 +1,306 @@
+---
+title: "Architecture"
+toc-location: left
+---
+
+Quartorium is one small Node.js server and one web page. It has no external services: no
+database server, no message queue, no login provider. It needs Git and Quarto on the same
+machine, and a Git remote to push to.
+
+::: {.column-page-right}
+```{mermaid}
+flowchart LR
+  subgraph Browser
+    A["Review page<br/>(React + TipTap)"]
+    B["Admin page"]
+  end
+  subgraph Server["Quartorium server (Node.js)"]
+    API["HTTP API<br/>api.js"]
+    SVC["Review rounds<br/>rounds.js"]
+    QMD["QMD pipeline<br/>qmd/*"]
+    REV["Change tracking<br/>review.js"]
+    RND["Renderer<br/>render.js"]
+    GIT["Git plumbing<br/>git.js"]
+    DB[("SQLite<br/>live state")]
+  end
+  P["Pandoc<br/>(bundled with Quarto)"]
+  Q["Quarto"]
+  R[("Git remote<br/>(any Git host)")]
+  A <-->|JSON| API
+  B <-->|JSON| API
+  API --> SVC
+  SVC --> QMD --> P
+  SVC --> REV
+  SVC --> RND --> Q
+  SVC --> DB
+  SVC --> GIT <-->|fetch / push| R
+```
+:::
+
+## Design choices
+
+**Git is the record, the database is the scratchpad.** Everything that matters long-term
+(text, comments, decisions, who wrote what) is committed to Git. The database only holds what
+is happening right now: drafts being typed, links, and which suggestions have been decided.
+If you deleted the database, you would lose the open links and uncommitted drafts, but not
+the paper or its history.
+
+**Plain Git, no forge API.** The server keeps a bare clone of each repository and writes
+commits with Git's plumbing commands (`hash-object`, `update-index`, `write-tree`,
+`commit-tree`, `update-ref`, `merge-tree`), using a temporary index. It never needs a working
+copy, never runs `checkout`, and never touches your main branch except for an explicit
+*Merge into main*. Credentials are passed per command as an HTTP header and are never written
+into the repository's configuration.
+
+**Blocks, not characters.** Changes are tracked per paragraph (top-level block). Because
+unchanged blocks keep their exact bytes ([How .qmd files are changed](qmd-files.qmd)),
+comparing blocks by content is exact, and three-way merges are simple and predictable. The
+word-level differences shown in the browser are computed only for display.
+
+**Render once, cache by what matters.** Quarto renders the whole paper once. The cache key
+covers everything that can change the outputs, which excludes the prose, so editing text
+never triggers a re-render.
+
+**Small dependency list.** Backend: Express, js-yaml, diff, nodemailer, and Node's built-in
+SQLite driver (no native modules to compile). Frontend: React, TipTap, KaTeX, diff.
+
+## Backend modules
+
+| Module | Responsibility |
+|---|---|
+| `server.js` | Creates the Express app, serves the built frontend, commits pending drafts every 15 s and on shutdown |
+| `api.js` | HTTP routes (see [API](#api)) |
+| `auth.js` | Admin password and signed session cookie; personal links need no login |
+| `config.js` | Settings from environment variables |
+| `db.js` | SQLite schema, small query helpers, JSON columns, migrations |
+| `rounds.js` | The collaboration flow: projects, rounds, people, saving, changes, accepting, comments, commits, finishing, merging, next round, history |
+| `review.js` | Block-level change tracking: diff, three-way merge, apply a change, bring a copy up to date |
+| `git.js` | Bare clone, fetch, push, plumbing commits, merges, log, file reads |
+| `render.js` | Quarto rendering, extracting each locked block's output, cross-reference numbers, asset cache |
+| `references.js` | Reading the bibliography (`.bib`, `.bibtex`, CSL JSON via Pandoc) and labels in the paper |
+| `mail.js` | Optional e-mails (invitations, new round, review finished) |
+| `qmd/blocks.js` | Lossless splitting of a `.qmd` into blocks |
+| `qmd/protect.js` | Wrapping Quarto-specific inline syntax before Pandoc |
+| `qmd/pandoc.js` | Batch calls to Pandoc |
+| `qmd/pm.js` | Pandoc document model ⇄ editor document |
+| `qmd/document.js` | `parseQmd` / `serializeQmd`: the byte-preservation guarantee, locked-block enforcement, citation checks |
+| `qmd/reflow.js` | Putting the author's line breaks back into an edited paragraph |
+| `qmd/meta.js` | Reading and writing the comment block; migrating old files |
+
+## Frontend modules
+
+| Module | Responsibility |
+|---|---|
+| `admin/AdminPage.jsx` | Connect repositories, start rounds |
+| `review/ReviewPage.jsx` | The review page: loading, autosave, polling, the review queue, round actions |
+| `review/extensions.js` | Editor schema (prose nodes, locked blocks, chips) and the rule that locked blocks can't be deleted |
+| `review/LockedBlockView.jsx` | Shows a locked block's rendered output, or its source |
+| `review/trackChanges.js` | Inline marks: own edits, changes since last visit, suggestion previews |
+| `review/anchors.js` | Quote-anchored comments: from selection to anchor and back, highlights |
+| `review/CitePicker.jsx`, `chipLabels.js` | Citation picker; readable labels for citations and cross-references |
+| `review/Sidebar.jsx` | Comments, Changes, People and History tabs |
+| `review/Topbar.jsx`, `ReviewBar.jsx` | Finish review / round dialogs, round menu; the keyboard-driven review queue |
+| `review/Toolbar.jsx`, `SelectionMenu.jsx` | Formatting, comment and cite buttons |
+
+## Data model
+
+```{mermaid}
+erDiagram
+  projects ||--o{ rounds : has
+  rounds ||--o{ members : has
+  rounds ||--o{ events : logs
+  projects {
+    text remote_url
+    text base_branch
+    text username
+    text token
+  }
+  rounds {
+    text doc_path
+    text branch
+    text status "open | finished"
+    text base_text "the round's .qmd"
+    int prose_version
+    int committed_version
+  }
+  members {
+    text name
+    text role "lead | reviewer"
+    text token "the personal link"
+    text branch
+    text copy_base "round text the copy started from"
+    text copy_text "reviewer's draft"
+    text resolved "decided suggestions"
+    text orphans "outdated suggestions"
+    text status "invited | working | done"
+    text seen_prose "round text at last visit"
+  }
+  events {
+    text type "edited | accepted | rejected | main | ..."
+    text data
+  }
+```
+
+- A **round** holds the current text of the paper under review (`base_text`, comments
+  included). The lead's edits change it directly.
+- A **reviewer** has a private copy: `copy_base` is the round text it started from, and
+  `copy_text` is their version (null when they changed nothing). Their suggestions are the
+  differences between the two.
+- `resolved` remembers which suggestions the lead accepted or rejected, so they disappear
+  from the list. `orphans` are suggestions that became *outdated* because the same
+  paragraph changed in the round.
+- **Events** record who changed which paragraphs, to explain *what changed since your last
+  visit* across rounds.
+
+On disk, the data folder (`QUARTORIUM_DATA`) contains `quartorium.sqlite`, `secret` (signs
+the admin cookie), `repos/<id>.git` (bare clones) and `renders/<key>/` (rendered outputs and
+their images).
+
+## How a change flows
+
+### Typing and saving
+
+::: {.column-page-right}
+```{mermaid}
+sequenceDiagram
+  participant B as Browser (reviewer)
+  participant S as Server
+  participant D as SQLite
+  participant G as Git
+  B->>S: PUT /api/r/:token/doc (editor document, rev)
+  S->>S: serializeQmd: keep unchanged blocks, restore locked blocks by key, Pandoc for edited ones
+  S->>D: copy_text = new text, rev + 1
+  S-->>B: { rev }
+  Note over B,S: others see the suggestion at their next poll (≤ 10 s)
+  B->>S: POST /pause (page hidden) — or 10 min idle
+  S->>G: commit "Anna's edits (in progress)" on Anna's branch
+  S->>G: push (within ~30 s)
+```
+:::
+
+The editor sends the whole document about a second after typing pauses. The `rev` number
+protects against two open windows overwriting each other: a stale window is asked to reload.
+
+### Seeing suggestions
+
+For every reviewer, the server compares `copy_base` with `copy_text` block by block. Each run
+of changed blocks is a suggestion, split into one suggestion per paragraph where paragraphs
+correspond one to one. Suggestions from different people that touch the same paragraphs are
+*competing*, and the lead picks one.
+
+### Accepting
+
+::: {.column-page-right}
+```{mermaid}
+sequenceDiagram
+  participant L as Browser (lead)
+  participant S as Server
+  participant G as Git
+  L->>S: POST /changes/:id/accept
+  S->>G: commit pending drafts first (reviewer's branch, round)
+  S->>S: splice the reviewer's blocks into the round text
+  S->>G: commit on the round branch, author = reviewer
+  S->>S: mark as resolved, notify the reviewer, record event
+  S-->>L: ok
+```
+:::
+
+A suggestion can be applied only while the paragraphs it replaces are unchanged in the round.
+Otherwise it's *outdated* and the lead copies from it by hand.
+
+### Bringing a reviewer's copy up to date
+
+When a reviewer opens their link and the round has changed, their copy is merged with the
+round (a three-way merge on blocks: old base, their copy, new round):
+
+- blocks only the round changed: the reviewer gets the new version;
+- blocks only the reviewer changed: their edits are kept;
+- blocks both changed: the round's version wins and the reviewer's version is kept as an
+  *outdated* suggestion, so nothing is lost and nothing is silently overwritten;
+- suggestions the lead rejected are dropped from the copy.
+
+This happens only on page load, never while someone is typing, so text never shifts under
+the cursor. The next commit on the reviewer's branch records the round commit as a second
+parent.
+
+## Rendering
+
+::: {.column-page-right}
+```{mermaid}
+flowchart LR
+  A["git archive<br/>of the round"] --> B["write the .qmd with each locked block<br/>wrapped in ::: {#qtm-N}"]
+  B --> C["quarto render --to html"]
+  C --> D["cut out each block's HTML<br/>copy images to the cache"]
+  C --> E["read figure / table / equation /<br/>section numbers"]
+  D --> F[("renders/&lt;key&gt;/")]
+  E --> F
+```
+:::
+
+- The cache key is a hash of the repository tree without the paper, the paper's path, and
+  the source of every locked block. Prose edits don't change it; editing a code chunk on main
+  and *Update from main* do.
+- Renders run one at a time, in the background. The page shows the source of locked blocks
+  until the output is ready.
+- Code chunks are shown as their output (the code is available under *Show source*).
+- Cross-reference numbers (`@fig-mpg` → "Figure 1") come from the rendered HTML, so they
+  match the paper exactly.
+
+## Inline track changes in the browser
+
+The editor shows three kinds of marks, all computed from block keys plus a word diff
+(`diffWordsWithSpace`):
+
+| Who sees it | What | Based on |
+|---|---|---|
+| Reviewer | their own edits (green insertions, struck deletions) | their copy vs. the round text it started from |
+| Everyone | what changed since their last visit | the round text now vs. the round text at their last visit |
+| Lead, in the review queue | a preview of the suggestion in place | the suggestion's old vs. new blocks |
+
+The marks are decorations: they're drawn over the text and never become part of the
+document, so they can't leak into the `.qmd`.
+
+## API {#api}
+
+All routes are under `/api`. Personal-link routes are under `/api/r/:token`. The token is the
+only credential, and lead-only actions check the role.
+
+| Method | Route | Purpose | Who |
+|---|---|---|---|
+| POST | `/admin/login`, `/admin/logout` | admin session | admin |
+| GET | `/admin/session` | is this browser logged in as admin? | anyone |
+| GET / POST | `/projects` | list / connect repositories | admin |
+| DELETE | `/projects/:id` | disconnect a repository | admin |
+| GET | `/projects/:id/files` | `.qmd` files on the base branch | admin |
+| POST | `/projects/:id/rounds` | start a round (returns the lead's link) | admin |
+| GET | `/rounds/:id` | round details | admin |
+| GET | `/r/:token` | open the paper: document, comments, suggestions, people, render, references, since last visit | link |
+| GET | `/r/:token/activity` | polling: suggestions, comments, people, render status | link |
+| PUT | `/r/:token/doc` | save the draft | link |
+| POST | `/r/:token/comments` | new comment or reference request | link |
+| POST | `/r/:token/comments/:cid/replies` · `/resolve` · `/agree` | reply, resolve, agree | link |
+| POST | `/r/:token/changes/:id/accept` · `/reject` | decide a suggestion (reviewers may withdraw their own) | lead |
+| POST | `/r/:token/changes/accept-all` | accept all that don't conflict (optionally from one person) | lead |
+| POST / DELETE | `/r/:token/people`, `/people/:id` | invite / remove a person | lead |
+| POST | `/r/:token/people/:id/invite` | send or prepare the invitation e-mail | lead |
+| POST | `/r/:token/pause` | the page was left: commit the draft | link |
+| POST | `/r/:token/finish` | finish my review (with a note) | reviewer |
+| POST | `/r/:token/round/finish` · `/reopen` · `/merge` · `/next` | round lifecycle | lead |
+| GET | `/r/:token/rounds` | earlier rounds | lead |
+| POST | `/r/:token/sync` | update from main | lead |
+| POST | `/r/:token/render` | render again | link |
+| GET | `/r/:token/history`, `/history/:hash` | history, and one entry's changes | link |
+| GET | `/render/:key/*path` | rendered images and other assets (immutable) | anyone with the key |
+
+## Tests
+
+`npm test` runs the backend tests with Node's built-in test runner:
+
+- `qmd.test.js`: lossless splitting, unchanged round trips, one-line diffs, protected
+  syntax, locked-block enforcement, citations, comments, legacy migration;
+- `review.test.js`: diff, merge, competing and outdated suggestions;
+- `git.test.js`: plumbing commits, merges and pushes against a local bare remote;
+- `render.test.js`: a real Quarto render with a figure, a table and cross-references;
+- `flow.test.js`: a complete review: invite, edit, comment, cite, accept, decline, finish
+  review, leave the page, history, finish round, merge into main, next round with the same
+  links, e-mails.
