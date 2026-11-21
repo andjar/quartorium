@@ -176,3 +176,14 @@ test('joinBlocks keeps a blank line when neighbours change', () => {
   const items = [s.blocks[0], s.blocks[2]];
   assert.equal(joinBlocks(s.lead, items), '$$\nx\n$$\n\n# H\n');
 });
+
+test('spans without attributes and links without targets do not leave brackets', async () => {
+  const parsed = await parseQmd('Hello world.\n');
+  const doc = clone(parsed.doc);
+  doc.content[0].content = [
+    { type: 'text', text: 'Hello ', marks: [{ type: 'span', attrs: { attr: null } }] },
+    { type: 'text', text: 'world', marks: [{ type: 'link', attrs: { href: '' } }] },
+    { type: 'text', text: ' again.' },
+  ];
+  assert.equal(await serializeQmd(doc, [parsed]), 'Hello world again.\n');
+});

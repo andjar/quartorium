@@ -54,9 +54,12 @@ function extractDiv(html, id) {
   return html.slice(html.indexOf('>', start) + 1, end - '</div>'.length).trim();
 }
 
+const stripCopyButtons = (html) => html.replace(/<button[^>]*code-copy-button[^>]*>[\s\S]*?<\/button>/g, '');
+
 /** Remove echoed source code; reviewers can still look at the code via "show code". */
 function stripCode(html) {
   html = html.replace(/<details class="code-fold">[\s\S]*?<\/details>/g, '');
+  html = stripCopyButtons(html);
   const re = /<div class="(code-copy-outer-scaffold|sourceCode cell-code)[^"]*"[^>]*>/g;
   let m;
   while ((m = re.exec(html))) {
@@ -165,7 +168,7 @@ class Renderer {
         if (!b.locked || NOT_RENDERED.has(b.kind)) return;
         const inner = extractDiv(html, `qtm-${i}`);
         if (inner == null) return;
-        outputs[b.key] = this.rewriteAssets(b.kind === 'chunk' ? stripCode(inner) : inner, htmlDir, tmp, outDir, key);
+        outputs[b.key] = this.rewriteAssets(b.kind === 'chunk' ? stripCode(inner) : stripCopyButtons(inner), htmlDir, tmp, outDir, key);
       });
       result = { status: 'ok', outputs, renderedAt: new Date().toISOString() };
     } catch (e) {

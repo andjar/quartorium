@@ -36,7 +36,9 @@ function stringify(inlines) {
       case 'Link': case 'Span': s += stringify(n.c[1]); break;
       case 'Image': s += stringify(n.c[1]); break;
       case 'Note': break;
-      default: if (Array.isArray(n.c)) s += stringify(n.c.find(Array.isArray) || []);
+      case 'Emph': case 'Strong': case 'Strikeout': case 'Underline':
+      case 'Superscript': case 'Subscript': case 'SmallCaps': s += stringify(n.c); break;
+      default: break;
     }
   }
   return s;
@@ -182,7 +184,8 @@ function nodeToAst(n) {
 }
 
 function knownMarks(n) {
-  return (n.marks || []).filter((m) => m.type === 'link' || m.type === 'span' || MARK_TO_AST[m.type]);
+  return (n.marks || []).filter((m) =>
+    (m.type === 'link' && m.attrs?.href) || (m.type === 'span' && !isEmptyAttr(m.attrs?.attr)) || MARK_TO_AST[m.type]);
 }
 
 /** Convert a run of PM inline nodes to nested Pandoc inlines. */

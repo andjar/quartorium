@@ -47,7 +47,7 @@ function yamlSummary(source) {
     return {
       title: asText(data.title),
       subtitle: asText(data.subtitle),
-      date: data.date ? String(data.date) : null,
+      date: data.date instanceof Date ? data.date.toISOString().slice(0, 10) : data.date ? String(data.date) : null,
       authors: authors.map(asText).filter(Boolean),
     };
   } catch {

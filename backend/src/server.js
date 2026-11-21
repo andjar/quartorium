@@ -21,7 +21,7 @@ function createServer({ dataDir = config.dataDir } = {}) {
   const dist = path.join(__dirname, '..', '..', 'frontend', 'dist');
   if (fs.existsSync(dist)) {
     web.use(express.static(dist, { index: false }));
-    web.get('/*path', (req, res) => res.sendFile(path.join(dist, 'index.html')));
+    web.get('/{*path}', (req, res) => res.sendFile(path.join(dist, 'index.html')));
   }
   return { web, app, store };
 }
