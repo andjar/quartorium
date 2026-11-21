@@ -74,4 +74,6 @@ test('renders the document and cuts out each block', { skip: !hasJupyter && 'qua
   assert.match(result.outputs[table.key], /<table/);
   assert.match(result.outputs[div.key], /callout/);
   assert.equal(renderer.status(key), 'ok');
+  assert.equal(result.xrefs['fig-line'], 'Figure 1');
+  assert.equal(result.xrefs['tbl-x'], 'Table 1');
 });

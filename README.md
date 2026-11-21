@@ -46,7 +46,22 @@ Quartorium only ever pushes `quartorium/*` branches. It never writes to your mai
 | Paragraphs, headings, lists, block quotes | Code chunks (their output is shown) |
 | Bold, italic, underline, strikethrough, super/subscript, links | YAML header (shown as a title block) |
 | Comments on any text | Tables, display equations, callouts and other `:::` blocks |
-| | Citations, cross-references, inline math and code, shortcodes, footnotes (shown as chips) |
+| New citations and cross-references (see below) | Inline math and code, shortcodes, footnotes (shown as chips) |
+
+### Citations and cross-references
+
+Citations and cross-references show as readable chips (*Smith et al. 2020, p. 3*,
+*Figure 1*), with the full reference on hover. Names come from the paper's bibliography
+(the `bibliography:` file in the document's YAML or in `_quarto.yml`; `.bib` and CSL JSON),
+and numbers come from Quarto's own render. To cite, type `@` or click **Cite**, then search
+the bibliography and the paper's figures, tables, equations and sections. A page or chapter
+and "name in the sentence" (`@smith2020` instead of `[@smith2020]`) are optional. The server
+only accepts keys that exist in the bibliography or the paper.
+
+Quartorium never edits the bibliography. If a reference is missing, co-authors use
+**Can't find it?** in the picker to leave a *reference request* (DOI, link or full
+reference) at that spot. The lead adds it to the `.bib` in their own tools, pushes, and
+clicks *Update from main*. From then on everyone can cite it.
 
 **Untouched text keeps its exact bytes.** Opening and saving a paper without edits gives an
 identical file. When a paragraph is edited, only that paragraph is rewritten, and its line
@@ -129,6 +144,7 @@ backend/src/
   qmd/document.js   parse / serialize; reuse original bytes for unchanged blocks
   qmd/reflow.js     keep the author's line breaks in edited paragraphs
   qmd/meta.js       the invisible comment block
+  references.js     bibliography (read-only, via Pandoc) and labels that can be cited
   review.js         block-level diff, three-way merge, suggestions
   rounds.js         review rounds: links, copies, accept/reject, comments, commits
   git.js            bare clones, plumbing commits without a working directory, push, merge-tree

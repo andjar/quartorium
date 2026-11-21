@@ -21,6 +21,7 @@ function emptyMeta() {
 function normalizeComment(c) {
   return {
     id: String(c.id),
+    ...(c.type === 'reference' ? { type: 'reference' } : {}),
     anchor: c.anchor || { quote: '', prefix: '', suffix: '' },
     author: c.author || 'Unknown',
     created: c.created || c.timestamp || new Date(0).toISOString(),

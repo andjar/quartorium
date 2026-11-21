@@ -291,4 +291,4 @@ function blocksToPlain(blocks) {
   }).filter((s) => s !== '').join('\n');
 }
 
-module.exports = { blocksToPm, pmBlocksToAst, pmInlinesToAst, stringify, blocksToPlain, Unsupported };
+module.exports = { blocksToPm, pmBlocksToAst, pmInlinesToAst, stringify, blocksToPlain, textToAst, Unsupported };

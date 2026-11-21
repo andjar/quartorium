@@ -20,6 +20,7 @@ const { splitQmd } = require('./qmd/blocks');
 const { parseQmd, serializeQmd, withMeta, plainTexts, yamlSummary } = require('./qmd/document');
 const { emptyMeta } = require('./qmd/meta');
 const review = require('./review');
+const { loadBibliography, documentLabels } = require('./references');
 
 class HttpError extends Error {
   constructor(status, message, extra = {}) { super(message); this.status = status; Object.assign(this, extra); }
@@ -44,6 +45,7 @@ class Quartorium {
     this.parsed = new Map();
     this.pendingPush = new Set();
     this.renderKeys = new Map();
+    this.bibCache = new Map();
   }
 
   // ------------------------------------------------------------ helpers
@@ -283,9 +285,29 @@ class Quartorium {
       this.renderKeys.set(round.id, { head, lockedSig, key });
     }
     const cached = force ? null : this.renderer.get(key);
-    if (cached) return { key, status: cached.status, error: cached.error || null, outputs: cached.outputs };
+    if (cached) return { key, status: cached.status, error: cached.error || null, outputs: cached.outputs, xrefs: cached.xrefs || {} };
     this.renderer.ensure({ repo, ref, docPath: round.doc_path, text: round.base_text, key, force }).catch(() => {});
-    return { key, status: 'rendering', error: null, outputs: {} };
+    return { key, status: 'rendering', error: null, outputs: {}, xrefs: {} };
+  }
+
+  // ------------------------------------------------------------ references
+
+  /** What can be cited: bibliography entries (read-only) and labels in the paper. */
+  async references(round) {
+    const repo = this.repoFor(this.project(round.project_id));
+    const ref = `refs/heads/${round.branch}`;
+    const memoKey = (await repo.resolve(ref)) + (splitQmd(round.base_text).blocks.find((b) => b.kind === 'yaml')?.key || '');
+    let bib = this.bibCache.get(round.id);
+    if (!bib || bib.memoKey !== memoKey) {
+      bib = { memoKey, ...(await loadBibliography(repo, ref, round.doc_path, round.base_text)) };
+      this.bibCache.set(round.id, bib);
+    }
+    return { files: bib.files, missing: bib.missing, entries: bib.entries, labels: documentLabels(round.base_text) };
+  }
+
+  async citeIds(round) {
+    const refs = await this.references(round);
+    return new Set([...refs.entries.map((e) => e.id), ...refs.labels.map((l) => l.id)]);
   }
 
   // ------------------------------------------------------------ changes
@@ -424,6 +446,7 @@ class Quartorium {
         changes: await this.changesView(round),
         people: this.peopleView(round, member),
         render: await this.renderInfo(round),
+        references: await this.references(round),
         notices: member.notices,
         pushError: member.role === 'lead' ? project.push_error : null,
       };
@@ -434,7 +457,7 @@ class Quartorium {
     const { member, round, project } = this.refresh(ctx);
     this.db.update('members', member.id, { last_seen: this.db.now() });
     const render = await this.renderInfo(round);
-    if (render.key === renderKey) delete render.outputs;
+    if (render.key === renderKey) { delete render.outputs; delete render.xrefs; }
     return {
       proseVersion: round.prose_version,
       version: round.version,
@@ -452,7 +475,7 @@ class Quartorium {
       if (member.role === 'lead') {
         if (proseVersion !== round.prose_version) throw new HttpError(409, 'The document changed in the meantime.', { reload: true });
         const parsed = await this.parse(round.base_text);
-        const text = await serializeQmd(doc, [parsed]);
+        const text = await serializeQmd(doc, [parsed], { citeIds: await this.citeIds(round) });
         if (text !== round.base_text) {
           this.db.update('rounds', round.id, { base_text: text, prose_version: round.prose_version + 1, version: round.version + 1, dirty_author_id: member.id, updated_at: this.db.now() });
         }
@@ -462,7 +485,7 @@ class Quartorium {
       const ref = member.copy_text ?? member.copy_base;
       const contexts = [await this.parse(ref)];
       if (member.copy_text != null) contexts.push(await this.parse(member.copy_base));
-      const text = await serializeQmd(doc, contexts, { meta: null });
+      const text = await serializeQmd(doc, contexts, { meta: null, citeIds: await this.citeIds(round) });
       const copy = text === member.copy_base ? null : text;
       if (copy !== member.copy_text) {
         this.db.update('members', member.id, { copy_text: copy, copy_rev: member.copy_rev + 1, updated_at: this.db.now() });
@@ -491,16 +514,17 @@ class Quartorium {
     return c;
   }
 
-  addComment(ctx, { anchor, text }) {
+  addComment(ctx, { anchor, text, type }) {
     text = String(text || '').trim();
     if (!text) throw new HttpError(400, 'Write something first.');
     if (text.length > 20000) throw new HttpError(400, 'That comment is too long.');
     const a = anchor || {};
     const clean = { quote: String(a.quote || '').slice(0, 2000), prefix: String(a.prefix || '').slice(0, 64), suffix: String(a.suffix || '').slice(0, 64) };
     const now = this.db.now();
-    const comment = { id: 'c' + crypto.randomBytes(5).toString('hex'), anchor: clean, author: ctx.member.name, created: now, resolved: false, thread: [{ author: ctx.member.name, created: now, text }], agree: [] };
+    const isRequest = type === 'reference';
+    const comment = { id: 'c' + crypto.randomBytes(5).toString('hex'), ...(isRequest ? { type: 'reference' } : {}), anchor: clean, author: ctx.member.name, created: now, resolved: false, thread: [{ author: ctx.member.name, created: now, text }], agree: [] };
     return this.editComments(ctx, (meta) => { meta.comments.push(comment); return comment; },
-      `Comment by ${ctx.member.name}${clean.quote ? ` on “${snippet(clean.quote, 40)}”` : ''}: ${snippet(text)}`);
+      `${isRequest ? 'Reference request' : 'Comment'} by ${ctx.member.name}${clean.quote ? ` on “${snippet(clean.quote, 40)}”` : ''}: ${snippet(text)}`);
   }
 
   reply(ctx, id, text) {

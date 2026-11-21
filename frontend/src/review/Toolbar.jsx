@@ -1,7 +1,7 @@
 import { useEffect, useReducer } from 'react';
 
 /** A small formatting toolbar: only what the server can write back to Markdown. */
-export default function Toolbar({ editor, onComment }) {
+export default function Toolbar({ editor, onComment, onCite }) {
   const [, rerender] = useReducer((x) => x + 1, 0);
   useEffect(() => {
     if (!editor) return undefined;
@@ -50,6 +50,8 @@ export default function Toolbar({ editor, onComment }) {
       {btn('• List', 'Bulleted list', () => chain().toggleBulletList().run(), editor.isActive('bulletList'))}
       {btn('1. List', 'Numbered list', () => chain().toggleOrderedList().run(), editor.isActive('orderedList'))}
       {btn('❝', 'Quote', () => chain().toggleBlockquote().run(), editor.isActive('blockquote'))}
+      <span className="sep" />
+      {btn('📚 Cite', 'Insert a citation or a reference to a figure/table (or type @)', onCite)}
       <span className="grow" />
       {btn('💬 Comment', 'Comment on the selected text', onComment, false, editor.state.selection.empty)}
     </div>

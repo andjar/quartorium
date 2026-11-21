@@ -44,6 +44,19 @@ export function anchorFromSelection(state) {
   return { quote: text.slice(a, b), prefix: text.slice(Math.max(0, a - CONTEXT), a), suffix: text.slice(b, b + CONTEXT) };
 }
 
+/** Anchor on the words just before a position (for notes about a spot, not a selection). */
+export function anchorBefore(state, pos) {
+  const { text, map } = textIndex(state.doc);
+  let i = map.findIndex((p) => p >= pos);
+  if (i === -1) i = text.length;
+  let start = text.lastIndexOf('\n', i - 1) + 1;
+  start = Math.max(start, i - 40, text.lastIndexOf(ATOM, i - 1) + 1); // plain words only, no chips
+  const quote = text.slice(start, i).replace(/^\S*\s/, '').trimEnd();
+  if (!quote) return { quote: '', prefix: '', suffix: '' };
+  const qStart = text.lastIndexOf(quote, i);
+  return { quote, prefix: text.slice(Math.max(0, qStart - CONTEXT), qStart), suffix: text.slice(qStart + quote.length, qStart + quote.length + CONTEXT) };
+}
+
 function commonSuffix(a, b) { let n = 0; while (n < a.length && n < b.length && a[a.length - 1 - n] === b[b.length - 1 - n]) n++; return n; }
 function commonPrefix(a, b) { let n = 0; while (n < a.length && n < b.length && a[n] === b[n]) n++; return n; }
 

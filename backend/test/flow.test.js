@@ -13,6 +13,7 @@ config.quarto = 'quartorium-test-no-quarto'; // rendering is covered in render.t
 
 const PAPER = `---
 title: Flow paper
+bibliography: refs.bib
 ---
 
 ## Introduction
@@ -55,7 +56,10 @@ function editParagraph(doc, startsWith, newText) {
 }
 
 test('review round flow', async (t) => {
-  const remote = makeRemote({ 'paper.qmd': PAPER, 'data.csv': 'x\n1\n' });
+  const remote = makeRemote({
+    'paper.qmd': PAPER, 'data.csv': 'x\n1\n',
+    'refs.bib': '@article{doe2020, author = {Doe, Jane and Roe, Rick}, title = {On Things}, journal = {J}, year = {2020}}\n@book{lee2018, author = {Lee, Kim}, title = {Methods}, publisher = {P}, year = {2018}}\n',
+  });
   const { web, app, store } = createServer({ dataDir: tmpdir() });
   const server = web.listen(0);
   t.after(() => { server.closeAllConnections(); server.close(); store.close(); });
@@ -114,13 +118,36 @@ test('review round flow', async (t) => {
   assert.equal(bobSecond.anchor.key, annaChange.anchor.key, 'both changes point at the same paragraph');
   assert.equal(bobThird.new[0].text, 'Third paragraph, clarified by Bob @doe2020'.replace('@doe2020', '[@doe2020]'));
 
+  // --- citations: the bibliography and labels are offered; only known keys get in
+  const refs = (await anon.get(A)).data.references;
+  assert.deepEqual(refs.entries.map((e) => [e.id, e.label]), [['doe2020', 'Doe & Roe 2020'], ['lee2018', 'Lee 2018']]);
+  assert.deepEqual(refs.labels.map((l) => [l.id, l.kind]), [['fig-x', 'Figure']]);
+  const a2 = (await anon.get(A)).data;
+  const citeNode = (id, mode, suffix = []) => ({ type: 'opaque', attrs: { kind: 'Cite', label: id, ast: { t: 'Cite', c: [[{ citationId: id, citationPrefix: [], citationSuffix: suffix, citationMode: { t: mode }, citationNoteNum: 0, citationHash: 0 }], []] } } });
+  const withCite = JSON.parse(JSON.stringify(a2.doc));
+  const closing = withCite.content.find((n) => (n.content || [])[0]?.text?.startsWith('Closing'));
+  closing.content = [
+    { type: 'text', text: 'Closing paragraph, see ' },
+    citeNode('lee2018', 'NormalCitation', [{ t: 'Str', c: ',' }, { t: 'Space' }, { t: 'Str', c: 'p.' }, { t: 'Space' }, { t: 'Str', c: '7' }]),
+    { type: 'text', text: ' and ' }, citeNode('fig-x', 'AuthorInText'),
+    { type: 'text', text: ' but not ' }, citeNode('made-up', 'NormalCitation'),
+    { type: 'text', text: '.' },
+  ];
+  assert.equal((await anon.put(`${A}/doc`, { doc: withCite, rev: a2.rev })).status, 200);
+  const citeChange = (await anon.get(`${L}/activity`)).data.changes.find((c) => c.new[0]?.text.startsWith('Closing paragraph, see'));
+  assert.equal(citeChange.new[0].text, 'Closing paragraph, see [@lee2018, p. 7] and @fig-x but not made-up.');
+  const req = (await anon.post(`${A}/comments`, { type: 'reference', anchor: { quote: 'Closing paragraph' }, text: 'Please add doi:10.1000/xyz (Smith 2021) here.' })).data;
+  assert.equal(req.type, 'reference');
+  // Anna takes the citation edit back again so the rest of the flow is unchanged.
+  assert.equal((await anon.post(`${A}/changes/${citeChange.id}/reject`)).status, 200);
+
   // --- comments are shared
   const c = (await anon.post(`${A}/comments`, { anchor: { quote: 'Closing paragraph', prefix: '', suffix: '.' }, text: 'Should we cut this?' })).data;
   await anon.post(`${B}/comments/${c.id}/agree`);
   await anon.post(`${L}/comments/${c.id}/replies`, { text: 'Agreed, will do.' });
   assert.equal((await anon.post(`${B}/comments/${c.id}/resolve`)).status, 403, 'only lead or author resolves');
   await anon.post(`${L}/comments/${c.id}/resolve`);
-  const comments = (await anon.get(`${B}/activity`)).data.comments;
+  const comments = (await anon.get(`${B}/activity`)).data.comments.filter((x) => x.type !== 'reference');
   assert.deepEqual(comments[0].agree, ['Bob']);
   assert.equal(comments[0].thread.length, 2);
   assert.equal(comments[0].resolved, true);
@@ -160,7 +187,7 @@ test('review round flow', async (t) => {
   assert.ok(file.includes('First paragraph stays as it is.'));
   assert.match(file, /<!-- quartorium\n[\s\S]*Should we cut this\?[\s\S]*-->$/);
   const authors = git('log', '--format=%an: %s', roundBranch).split('\n');
-  for (const expected of [/^Anna: Accept change by Anna/, /^Bob: Accept change by Bob/, /^Lena Lead: Reject change by Bob/, /^Anna: Comment by Anna/, /^Bob: Bob agrees/, /^Lena Lead: Edits by Lena Lead/]) {
+  for (const expected of [/^Anna: Reference request by Anna/, /^Anna: Anna withdrew a change/, /^Anna: Accept change by Anna/, /^Bob: Accept change by Bob/, /^Lena Lead: Reject change by Bob/, /^Anna: Comment by Anna/, /^Bob: Bob agrees/, /^Lena Lead: Edits by Lena Lead/]) {
     assert.ok(authors.some((l) => expected.test(l)), `missing ${expected} in\n${authors.join('\n')}`);
   }
   const branches = git('for-each-ref', '--format=%(refname:short)', 'refs/heads/quartorium');

@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { api, linkFor, timeAgo } from '../api.js';
 import { ChangeDiff } from './Diff.jsx';
 
-const snippet = (s, n = 90) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+const snippet = (s, n = 90) => {
+  const t = String(s || '').replace(/\uFFFC/g, '…').replace(/\s+/g, ' ').trim(); // \uFFFC: a chip inside the quoted text
+  return t.length > n ? t.slice(0, n - 1) + '…' : t;
+};
 
 function Composer({ placeholder, onSubmit, onCancel, autoFocus, submitLabel = 'Post' }) {
   const [text, setText] = useState('');
@@ -35,7 +38,8 @@ function CommentCard({ c, me, active, located, actions, onSelect }) {
   const canResolve = me.role === 'lead' || c.author === me.name;
   const agreed = c.agree.includes(me.name);
   return (
-    <article ref={ref} className={`card comment ${active ? 'active' : ''} ${c.resolved ? 'resolved' : ''}`} onClick={() => onSelect(c.id)}>
+    <article ref={ref} className={`card comment ${active ? 'active' : ''} ${c.resolved ? 'resolved' : ''} ${c.type === 'reference' ? 'reference' : ''}`} onClick={() => onSelect(c.id)}>
+      {c.type === 'reference' && <div className="badge">📚 Reference to add to the bibliography</div>}
       {c.anchor.quote && <blockquote className={located ? '' : 'gone'} title={located ? 'Show in the document' : 'This text is no longer in the document'}>{snippet(c.anchor.quote)}</blockquote>}
       {c.thread.map((t, i) => (
         <div key={i} className="message">

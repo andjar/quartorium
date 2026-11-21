@@ -187,3 +187,28 @@ test('spans without attributes and links without targets do not leave brackets',
   ];
   assert.equal(await serializeQmd(doc, [parsed]), 'Hello world again.\n');
 });
+
+test('new citations are accepted for known keys only, with locators and modes', async () => {
+  const parsed = await parseQmd('See the data.\n');
+  const cite = (id, mode = 'NormalCitation', suffix = []) => ({
+    type: 'opaque',
+    attrs: { kind: 'Cite', label: id, ast: { t: 'Cite', c: [[{ citationId: id, citationPrefix: [], citationSuffix: suffix, citationMode: { t: mode }, citationNoteNum: 0, citationHash: 0 }], [{ t: 'Str', c: 'x' }]] } },
+  });
+  const doc = clone(parsed.doc);
+  doc.content[0].content = [
+    { type: 'text', text: 'See ' },
+    cite('smith2020', 'NormalCitation', [{ t: 'Str', c: ',' }, { t: 'Space' }, { t: 'Str', c: 'p.' }, { t: 'Space' }, { t: 'Str', c: '3' }]),
+    { type: 'text', text: ', ' },
+    cite('doe2019', 'AuthorInText'),
+    { type: 'text', text: ', ' },
+    cite('fig-mpg', 'AuthorInText'),
+    { type: 'text', text: ' and ' },
+    cite('unknown2000'),
+    { type: 'text', text: '.' },
+  ];
+  const out = await serializeQmd(doc, [parsed], { citeIds: new Set(['smith2020', 'doe2019', 'fig-mpg']) });
+  assert.equal(out, 'See [@smith2020, p. 3], @doe2019, @fig-mpg and unknown2000.\n');
+  // Without a list of known keys, nothing new gets in.
+  const out2 = await serializeQmd(doc, [parsed]);
+  assert.ok(!out2.includes('[@smith2020'));
+});

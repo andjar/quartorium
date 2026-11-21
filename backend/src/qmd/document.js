@@ -14,7 +14,7 @@ const { splitQmd, joinBlocks, hash } = require('./blocks');
 const { injectMeta } = require('./meta');
 const { protect, collectDefLabels } = require('./protect');
 const pandoc = require('./pandoc');
-const { blocksToPm, pmBlocksToAst, blocksToPlain, Unsupported } = require('./pm');
+const { blocksToPm, pmBlocksToAst, blocksToPlain, stringify, textToAst, Unsupported } = require('./pm');
 const { reflow } = require('./reflow');
 
 class LockedBlocksChanged extends Error {
@@ -105,14 +105,42 @@ function walkOpaque(nodes, fn) {
   }
 }
 
+const CITE_MODES = new Set(['NormalCitation', 'AuthorInText', 'SuppressAuthor']);
+const plainInlines = (list) => textToAst(stringify(Array.isArray(list) ? list : []).slice(0, 200));
+
+/**
+ * A citation inserted in the browser. Accepted only when every key is known
+ * (bibliography entry or label in the paper); the AST is rebuilt from scratch.
+ */
+function cleanCite(ast, citeIds) {
+  const list = ast && ast.t === 'Cite' && Array.isArray(ast.c) && Array.isArray(ast.c[0]) ? ast.c[0] : null;
+  if (!citeIds || !list || list.length === 0 || list.length > 20) return null;
+  const citations = [];
+  for (const c of list) {
+    const id = String(c?.citationId || '');
+    if (!citeIds.has(id)) return null;
+    citations.push({
+      citationId: id,
+      citationPrefix: plainInlines(c.citationPrefix),
+      citationSuffix: plainInlines(c.citationSuffix),
+      citationMode: { t: CITE_MODES.has(c.citationMode?.t) ? c.citationMode.t : 'NormalCitation' },
+      citationNoteNum: 0,
+      citationHash: 0,
+    });
+  }
+  return { t: 'Cite', c: [citations, [{ t: 'Str', c: citations.map((c) => '@' + c.citationId).join('; ') }]] };
+}
+
 /** Replace inline chips that did not exist in any context document with plain text. */
-function sanitizeOpaque(nodes, allowed) {
+function sanitizeOpaque(nodes, allowed, citeIds) {
   return (nodes || []).map((n) => {
     if (n.type === 'opaque') {
-      const ok = n.attrs && n.attrs.ast && allowed.has(JSON.stringify(n.attrs.ast));
-      return ok ? n : { type: 'text', text: String(n.attrs?.label || ''), marks: n.marks };
+      if (n.attrs && n.attrs.ast && allowed.has(JSON.stringify(n.attrs.ast))) return n;
+      const cite = cleanCite(n.attrs?.ast, citeIds);
+      if (cite) return { ...n, attrs: { ...n.attrs, ast: cite } };
+      return { type: 'text', text: String(n.attrs?.label || ''), marks: n.marks };
     }
-    return n.content ? { ...n, content: sanitizeOpaque(n.content, allowed) } : n;
+    return n.content ? { ...n, content: sanitizeOpaque(n.content, allowed, citeIds) } : n;
   }).filter((n) => n.type !== 'text' || n.text !== '');
 }
 
@@ -121,7 +149,7 @@ function sanitizeOpaque(nodes, allowed) {
  * @param {object} doc ProseMirror JSON from the browser
  * @param {Array} contexts parse results the document may derive from; contexts[0]
  *   is the reference (its lead text, line endings and locked skeleton apply)
- * @param {object} opts { meta, enforceLocked = true }
+ * @param {object} opts { meta, enforceLocked = true, citeIds: Set of keys/labels new citations may use }
  */
 async function serializeQmd(doc, contexts, opts = {}) {
   if (!doc || doc.type !== 'doc' || !Array.isArray(doc.content)) throw Object.assign(new Error('Invalid document'), { status: 400 });
@@ -158,7 +186,7 @@ async function serializeQmd(doc, contexts, opts = {}) {
       if (b && b.locked) items.push({ source: b.source, sep: b.sep, next: b.next, key: b.key });
       continue;
     }
-    const nodes = sanitizeOpaque(run.nodes, allowed);
+    const nodes = sanitizeOpaque(run.nodes, allowed, opts.citeIds);
     const orig = run.seg ? registry.get(run.seg) : null;
     if (orig && !orig.locked && orig.canon === canon(nodes)) {
       items.push({ source: orig.source, sep: orig.sep, next: orig.next, key: orig.key });

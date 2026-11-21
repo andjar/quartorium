@@ -12,6 +12,7 @@ import Superscript from '@tiptap/extension-superscript';
 import Link from '@tiptap/extension-link';
 import katex from 'katex';
 import LockedBlockView from './LockedBlockView.jsx';
+import { citeLabel, onChipData } from './chipLabels.js';
 
 const SmallCaps = Mark.create({
   name: 'smallcaps',
@@ -82,10 +83,11 @@ function renderChip(dom, attrs) {
     try { katex.render(label, dom, { displayMode: display, throwOnError: false }); } catch { dom.textContent = label; }
     dom.title = 'Equation (not editable here)';
   } else if (kind === 'Cite') {
-    const isRef = /@(fig|tbl|eq|sec|lst|thm|lem)-/.test(label);
-    dom.textContent = label.replace(/^\[|\]$/g, '');
-    dom.classList.add(isRef ? 'chip-ref' : 'chip-citation');
-    dom.title = isRef ? 'Cross-reference' : 'Citation';
+    const c = citeLabel(attrs.ast);
+    dom.textContent = c.text;
+    dom.classList.add(c.kind === 'ref' ? 'chip-ref' : 'chip-citation');
+    if (c.missing) dom.classList.add('chip-missing');
+    dom.title = c.title;
   } else if (kind === 'Code') {
     const code = document.createElement('code');
     code.textContent = label;
@@ -123,7 +125,9 @@ const Opaque = Node.create({
     const dom = document.createElement('span');
     dom.setAttribute('contenteditable', 'false');
     renderChip(dom, node.attrs);
-    return { dom };
+    // Citation labels depend on the bibliography and Quarto's numbering, which arrive later.
+    const off = node.attrs.kind === 'Cite' ? onChipData(() => renderChip(dom, node.attrs)) : null;
+    return { dom, destroy: () => off && off() };
   },
 });
 
@@ -152,11 +156,32 @@ const ProtectLocked = Extension.create({
   },
 });
 
-export function buildExtensions({ onBlocked }) {
+// Typing "@" at the start of a word opens the citation picker.
+const CiteTrigger = Extension.create({
+  name: 'citeTrigger',
+  addOptions: () => ({ onAt: () => {} }),
+  addProseMirrorPlugins() {
+    const { onAt } = this.options;
+    return [new Plugin({
+      props: {
+        handleTextInput: (view, from, to, text) => {
+          if (text !== '@') return false;
+          const $from = view.state.doc.resolve(from);
+          const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 1), $from.parentOffset, null, '\uFFFC');
+          if (before === '' || /[\s([]/.test(before)) setTimeout(() => onAt(from), 0);
+          return false;
+        },
+      },
+    })];
+  },
+});
+
+export function buildExtensions({ onBlocked, onAt }) {
   return [
     StarterKit.configure({ code: false, codeBlock: false }),
     Underline, Subscript, Superscript, SmallCaps, Span, QLink,
     PandocAttributes, LockedBlock, Opaque,
     ProtectLocked.configure({ onBlocked }),
+    CiteTrigger.configure({ onAt }),
   ];
 }

@@ -3,10 +3,12 @@ import { useParams } from 'react-router-dom';
 import { EditorContent, useEditor, BubbleMenu } from '@tiptap/react';
 import { api, ApiError } from '../api.js';
 import { buildExtensions } from './extensions.js';
-import { Highlights, highlightKey, anchorFromSelection, locateAnchor, textIndex } from './anchors.js';
+import { Highlights, highlightKey, anchorFromSelection, anchorBefore, locateAnchor, textIndex } from './anchors.js';
 import { RenderContext } from './renderContext.js';
 import Sidebar from './Sidebar.jsx';
 import Toolbar from './Toolbar.jsx';
+import CitePicker from './CitePicker.jsx';
+import { setChipData, citationNode } from './chipLabels.js';
 
 const SAVE_DELAY = 1200;
 const POLL_EVERY = 10000;
@@ -32,6 +34,8 @@ export default function ReviewPage() {
   const [located, setLocated] = useState({});
   const [toasts, setToasts] = useState([]);
   const [busy, setBusy] = useState(null);
+  const [picker, setPicker] = useState(null);
+  const openPickerRef = useRef(null);
 
   const rev = useRef(0);
   const proseVersion = useRef(0);
@@ -69,6 +73,7 @@ export default function ReviewPage() {
       setStale(null);
       setData(d);
       applyLive(d);
+      setChipData({ entries: d.references?.entries || [], hasBibliography: (d.references?.files || []).length > 0 });
       setDocKey((k) => k + 1);
       setSaveState('saved');
       for (const n of d.notices || []) if (NOTICE_TEXT[n.type]) toast(NOTICE_TEXT[n.type](n));
@@ -139,7 +144,10 @@ export default function ReviewPage() {
 
   // ---------------------------------------------------------------- editor
   const extensions = useMemo(() => [
-    ...buildExtensions({ onBlocked: () => toast('Code, figures, tables and equations can’t be removed or moved here. Ask the lead author to change them in the source.') }),
+    ...buildExtensions({
+      onBlocked: () => toast('Code, figures, tables and equations can’t be removed or moved here. Ask the lead author to change them in the source.'),
+      onAt: (pos) => openPickerRef.current?.(pos),
+    }),
     Highlights.configure({
       onCommentClick: (id) => { setActiveComment(id); setTab('comments'); },
       onChangeClick: (id) => { setActiveChange(id); setTab('changes'); },
@@ -202,7 +210,7 @@ export default function ReviewPage() {
     try { return await fn(...args); } catch (e) { toast(e.message, 'error'); if (e.data?.reload) await load(); throw e; }
   };
   const actions = {
-    addComment: guarded(async (anchor, text) => { await save(); const c = await api.post(`/r/${token}/comments`, { anchor, text }); await refresh(); setActiveComment(c.id); }),
+    addComment: guarded(async (anchor, text, type) => { await save(); const c = await api.post(`/r/${token}/comments`, { anchor, text, type }); await refresh(); setActiveComment(c.id); }),
     reply: guarded(async (id, text) => { await api.post(`/r/${token}/comments/${id}/replies`, { text }); await refresh(); }),
     resolve: guarded(async (id, resolved) => { await api.post(`/r/${token}/comments/${id}/resolve`, { resolved }); await refresh(); }),
     agree: guarded(async (id) => { await api.post(`/r/${token}/comments/${id}/agree`); await refresh(); }),
@@ -226,6 +234,39 @@ export default function ReviewPage() {
     if (!anchor) { toast('Select some text first, then click Comment.'); return; }
     setDraft(anchor);
     setTab('comments');
+  };
+
+  // Citations: the picker opens from the toolbar or when "@" is typed.
+  useEffect(() => { if (live.render.xrefs) setChipData({ xrefs: live.render.xrefs }); }, [live.render.xrefs]);
+  const openPicker = (atPos = null) => {
+    if (!editor) return;
+    const pos = atPos != null ? atPos + 1 : editor.state.selection.to;
+    const c = editor.view.coordsAtPos(Math.min(pos, editor.state.doc.content.size));
+    editor.view.dom.blur();
+    setPicker({ pos, atPos, coords: { left: c.left, top: c.top, bottom: c.bottom } });
+  };
+  openPickerRef.current = openPicker;
+  const typedAt = (p) => p.atPos != null && editor.state.doc.textBetween(p.atPos, p.atPos + 1) === '@';
+  const pickCitation = (choice) => {
+    const p = picker;
+    setPicker(null);
+    const range = typedAt(p) ? { from: p.atPos, to: p.atPos + 1 } : p.pos;
+    editor.chain().insertContentAt(range, citationNode(choice)).run();
+    editor.view.focus(); // synchronously, so the next keystroke lands in the paper
+  };
+  const requestReference = async (text) => {
+    const p = picker;
+    setPicker(null);
+    const anchor = (!editor.state.selection.empty && anchorFromSelection(editor.state)) || anchorBefore(editor.state, p.atPos ?? p.pos);
+    if (typedAt(p)) editor.chain().focus().deleteRange({ from: p.atPos, to: p.atPos + 1 }).run();
+    await actions.addComment(anchor, text, 'reference');
+    setTab('comments');
+    toast('Sent: the lead author will add the reference to the bibliography.');
+  };
+  const closePicker = () => {
+    const p = picker;
+    setPicker(null);
+    if (p && editor) { editor.commands.setTextSelection(p.atPos != null ? p.atPos + 1 : p.pos); editor.view.focus(); }
   };
 
   const sync = async () => {
@@ -286,7 +327,7 @@ export default function ReviewPage() {
 
       <div className="workspace">
         <main className="document">
-          <Toolbar editor={editor} onComment={startComment} />
+          <Toolbar editor={editor} onComment={startComment} onCite={() => openPicker()} />
           {editor && (
             <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }} shouldShow={({ state }) => !state.selection.empty && !state.selection.node}>
               <div className="bubble">
@@ -311,6 +352,10 @@ export default function ReviewPage() {
         />
       </div>
 
+      {picker && (
+        <CitePicker references={data.references} xrefs={live.render.xrefs} position={picker.coords}
+          onPick={pickCitation} onRequest={requestReference} onClose={closePicker} />
+      )}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className={`toast ${t.kind}`}>{t.text}</div>)}</div>
     </div>
   );

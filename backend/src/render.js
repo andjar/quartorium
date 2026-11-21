@@ -17,6 +17,8 @@ const config = require('./config');
 const { splitQmd } = require('./qmd/blocks');
 
 const NOT_RENDERED = new Set(['yaml', 'comment', 'def']);
+// Bump when what is stored per render changes, so old caches are re-rendered.
+const CACHE_FORMAT = 2;
 
 function sha1(s) {
   return crypto.createHash('sha1').update(s).digest('hex');
@@ -71,6 +73,27 @@ function stripCode(html) {
   return html;
 }
 
+const htmlText = (s) => s.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
+
+/** How Quarto numbered things: { 'fig-mpg': 'Figure 1', 'eq-energy': 'Equation 1', ... } */
+function extractXrefs(html) {
+  const xrefs = {};
+  const set = (id, text) => { if (text && !xrefs[id]) xrefs[id] = text; };
+  for (const m of html.matchAll(/<a href="#([^"]+)" class="quarto-xref"[^>]*>([\s\S]*?)<\/a>/g)) set(m[1], htmlText(m[2]));
+  for (const m of html.matchAll(/<div id="((?:fig|tbl|lst)-[^"]+)"/g)) {
+    const cap = html.slice(m.index, m.index + 20000).match(/<figcaption[^>]*>([\s\S]*?)<\/figcaption>/);
+    const label = cap && htmlText(cap[1]).match(/^((?:Figure|Table|Listing)\s+[\w.]+)/);
+    if (label) set(m[1], label[1]);
+  }
+  for (const m of html.matchAll(/<span id="(eq-[^"]+)"[^>]*>([\s\S]*?)<\/span>/g)) {
+    const n = m[2].match(/\\qquad\(([^)]+)\)/);
+    if (n) set(m[1], `Equation ${n[1]}`);
+  }
+  for (const m of html.matchAll(/<section id="(sec-[^"]+)"[^>]*data-number="([^"]+)"/g)) set(m[1], `Section ${m[2]}`);
+  return xrefs;
+}
+
 function findFile(dir, name) {
   let best = null;
   (function walk(d) {
@@ -114,7 +137,7 @@ class Renderer {
     const { blocks } = splitQmd(text);
     const locked = blocks.filter((b) => b.locked && b.kind !== 'comment').map((b) => b.source);
     const tree = await repo.treeKeyWithout(ref, docPath);
-    return sha1([tree, docPath, ...locked].join('\0'));
+    return sha1([CACHE_FORMAT, tree, docPath, ...locked].join('\0'));
   }
 
   dirFor(key) {
@@ -170,7 +193,7 @@ class Renderer {
         if (inner == null) return;
         outputs[b.key] = this.rewriteAssets(b.kind === 'chunk' ? stripCode(inner) : stripCopyButtons(inner), htmlDir, tmp, outDir, key);
       });
-      result = { status: 'ok', outputs, renderedAt: new Date().toISOString() };
+      result = { status: 'ok', outputs, xrefs: extractXrefs(html), renderedAt: new Date().toISOString() };
     } catch (e) {
       result = { status: 'error', outputs: {}, error: String(e.message || e).slice(0, 5000), renderedAt: new Date().toISOString() };
     } finally {
@@ -204,4 +227,4 @@ class Renderer {
   }
 }
 
-module.exports = { Renderer, instrument, extractDiv, stripCode };
+module.exports = { Renderer, instrument, extractDiv, stripCode, extractXrefs };
