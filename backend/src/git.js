@@ -238,12 +238,20 @@ class Repo {
     });
   }
 
+  /**
+   * Commits that changed a file, plus Quartorium's own commits (decisions such
+   * as rejections or "round finished" change no text but belong to the story).
+   */
   async log(ref, filepath, limit = 50) {
-    const r = await this.git(['log', `-n${limit}`, '--format=%H%x00%an%x00%aI%x00%s', ref, '--', filepath], { allowCodes: [0, 128] });
-    return r.stdout.split('\n').filter(Boolean).map((l) => {
+    const fmt = '--format=%H%x00%an%x00%aI%x00%s';
+    const parse = (out) => out.split('\n').filter(Boolean).map((l) => {
       const [hash, author, date, subject] = l.split('\0');
       return { hash, author, date, subject };
     });
+    const touched = await this.git(['log', `-n${limit}`, fmt, ref, '--', filepath], { allowCodes: [0, 128] });
+    const ours = await this.git(['log', `-n${limit}`, fmt, `--committer=${config.committerName}`, ref], { allowCodes: [0, 128] });
+    const all = new Map([...parse(touched.stdout), ...parse(ours.stdout)].map((c) => [c.hash, c]));
+    return [...all.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).slice(0, limit);
   }
 }
 

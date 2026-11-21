@@ -374,7 +374,7 @@ class Quartorium {
 
   async views(items) {
     const map = new Map((await blockViews(items)).map((v) => [v.key, v]));
-    return (b) => { const v = map.get(b.key); return { kind: v.kind, locked: v.locked, text: v.text, nodes: v.nodes }; };
+    return (b) => { const v = map.get(b.key); return { key: b.key, kind: v.kind, locked: v.locked, text: v.text, nodes: v.nodes }; };
   }
 
   /** All reviewers' changes against the round's current text. */
@@ -541,7 +541,10 @@ class Quartorium {
     if (now === member.seen_prose) return { at: member.seen_at, changes: [] };
     const o = review.blocksOf(member.seen_prose).blocks;
     const n = review.blocksOf(now).blocks;
-    const events = this.db.all("SELECT * FROM events WHERE round_id = ? AND type IN ('accepted', 'edited', 'main') ORDER BY id DESC", round.id);
+    // Events of this round and the earlier ones (people are matched by name across rounds).
+    const ids = [round.id];
+    for (let r = round; r && r.previous_round_id && ids.length < 20;) { ids.push(r.previous_round_id); r = this.round(r.previous_round_id); }
+    const events = this.db.all(`SELECT e.*, m.name AS actor FROM events e LEFT JOIN members m ON m.id = e.member_id WHERE e.round_id IN (${ids.map(() => '?').join(',')}) AND e.type IN ('accepted', 'edited', 'main') ORDER BY e.id DESC`, ...ids);
     const raw = [];
     for (const h of review.diffBlocks(o, n)) {
       const oldItems = o.slice(h.aStart, h.aEnd), newItems = n.slice(h.bStart, h.bEnd);
@@ -550,10 +553,10 @@ class Quartorium {
       let by;
       if (!ev) by = 'the lead author';
       else if (ev.type === 'accepted') {
-        if (ev.data.authorId === member.id || ev.member_id === member.id) continue; // your own change, or your own decision
+        if (ev.data.author === member.name || ev.data.by === member.name) continue; // your own change, or your own decision
         by = `${ev.data.author} (accepted by ${ev.data.by})`;
       } else if (ev.type === 'edited') {
-        if (ev.member_id === member.id) continue;
+        if (ev.data.by === member.name) continue;
         by = ev.data.by;
       } else by = 'an update from the main branch';
       raw.push({ oldItems, newItems, by, anchor: newItems.length ? { key: newItems[0].key, after: false } : (h.bStart > 0 ? { key: n[h.bStart - 1].key, after: true } : null) });
