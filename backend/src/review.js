@@ -13,6 +13,7 @@
 const crypto = require('crypto');
 const { diffArrays } = require('diff');
 const { splitQmd, joinBlocks } = require('./qmd/blocks');
+const { injectMeta, mergeMeta } = require('./qmd/meta');
 
 const keysOf = (items) => items.map((b) => b.key);
 const sameKeys = (a, b) => a.length === b.length && a.every((x, i) => x.key === b[i].key);
@@ -64,10 +65,10 @@ function locate(hay, needle, near) {
 /**
  * Three-way merge of block lists. `o` is the common ancestor, `a` "mine",
  * `b` "theirs". Changes on one side are applied; overlapping changes that
- * differ resolve to `b` and are reported in `conflicts` as { old, new } where
- * `new` is a's version of the region.
+ * differ resolve to `b` and are reported in `conflicts` as { old, new, theirs }
+ * where `new` is a's version of the region and `theirs` is b's.
  */
-function merge3(o, a, b) {
+function merge3(o, a, b, { keepBothInsertions = false } = {}) {
   const hunks = [
     ...diffBlocks(o, a).map((h) => ({ ...h, side: 'a', items: a })),
     ...diffBlocks(o, b).map((h) => ({ ...h, side: 'b', items: b })),
@@ -103,8 +104,13 @@ function merge3(o, a, b) {
       result.push(...version([...sides][0], cl));
     } else {
       const va = version('a', cl), vb = version('b', cl);
-      result.push(...vb);
-      if (!sameKeys(va, vb)) conflicts.push({ old: o.slice(cl.start, cl.end), new: va });
+      if (keepBothInsertions && cl.start === cl.end && !sameKeys(va, vb)) {
+        // Both sides only added text at the same place: keep both.
+        result.push(...vb, ...va);
+      } else {
+        result.push(...vb);
+        if (!sameKeys(va, vb)) conflicts.push({ old: o.slice(cl.start, cl.end), new: va, theirs: vb });
+      }
     }
     i = cl.end;
   }
@@ -182,4 +188,23 @@ function rebaseCopy({ copyBase, copy, base, rejected = [] }) {
   return { copy: join(b.lead, merged.items, b.eol), conflicts: merged.conflicts };
 }
 
-module.exports = { blocksOf, diffBlocks, merge3, changesOf, applyChange, rebaseCopy, locate, keysOf };
+/**
+ * Three-way merge of a whole .qmd file, paragraph by paragraph, for merges
+ * between branches (main and a review round). Unlike Git's line merge, edits
+ * to different paragraphs never conflict, and comment threads are merged by
+ * id instead of as text. When both sides changed the same paragraph, `theirs`
+ * wins and `ours` is returned in `conflicts` ({ old, new, theirs } blocks).
+ */
+function mergeQmd(baseText, oursText, theirsText) {
+  const o = splitQmd(baseText || '');
+  const a = splitQmd(oursText);
+  const b = splitQmd(theirsText);
+  const { items, conflicts } = merge3(o.blocks, a.blocks, b.blocks, { keepBothInsertions: true });
+  const lead = a.lead !== o.lead ? a.lead : b.lead;
+  const meta = mergeMeta(o.meta, a.meta, b.meta);
+  let text = injectMeta(joinBlocks(lead, items), meta);
+  if (b.eol === '\r\n') text = text.replace(/\n/g, '\r\n');
+  return { text, conflicts };
+}
+
+module.exports = { blocksOf, diffBlocks, merge3, mergeQmd, changesOf, applyChange, rebaseCopy, locate, keysOf };

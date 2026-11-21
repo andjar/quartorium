@@ -47,5 +47,6 @@ test('clone, branch, commit without checkout, push, merge from main', async () =
   assert.equal(fs.readFileSync(path.join(dest, 'data/x.csv'), 'utf8'), 'a,b\n1,2\n');
 
   const log = await repo.log('refs/heads/quartorium/round-1', 'paper.qmd');
-  assert.equal(log[0].author, 'Anna');
+  assert.equal(log[0].subject, 'Merge main', 'newest first, even within the same second');
+  assert.equal(log[1].author, 'Anna');
 });

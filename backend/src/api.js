@@ -58,6 +58,7 @@ function routes(app, auth) {
   link.post('/round/finish', async (req, res) => res.json(await app.finishRound(req.ctx, { removeResolved: req.body?.removeResolved !== false })));
   link.post('/round/reopen', async (req, res) => res.json(await app.reopenRound(req.ctx)));
   link.post('/round/merge', async (req, res) => res.json(await app.mergeIntoMain(req.ctx)));
+  link.post('/round/keep-main', (req, res) => res.json(app.setKeepMain(req.ctx, req.body?.on !== false)));
   link.post('/round/next', async (req, res) => res.json(await app.nextRound(req.ctx, req.body || {}, baseUrl(req))));
   link.get('/rounds', (req, res) => res.json(app.previousRounds(req.ctx)));
   link.post('/sync', async (req, res) => res.json(await app.sync(req.ctx)));

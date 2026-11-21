@@ -37,6 +37,20 @@ const prose = (text) => withMeta(text, null);
 const metaOf = (text) => splitQmd(text).meta || emptyMeta();
 const token = () => crypto.randomBytes(18).toString('base64url');
 const slug = (s) => String(s).toLowerCase().normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/[\s_]+/g, '-').replace(/-+/g, '-').slice(0, 40) || 'x';
+/** The first words of a block as the editor shows them, to anchor a comment there. */
+function quoteOf(views) {
+  for (const v of views) {
+    if (v.locked || !v.nodes || !v.nodes.length) continue;
+    let text = '';
+    for (const n of v.nodes[0].content || []) {
+      if (n.type !== 'text') break;
+      text += n.text;
+    }
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    if (words.length) return words.slice(0, 8).join(' ');
+  }
+  return '';
+}
 const snippet = (s, n = 60) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 const emailFor = (m) => m.email || `${slug(m.name)}@users.quartorium.invalid`;
 const authorOf = (m) => ({ name: m.name, email: emailFor(m) });
@@ -49,6 +63,7 @@ class Quartorium {
     this.dataDir = dataDir;
     this.repos = new Map();
     this.renderer = new Renderer(path.join(dataDir, 'renders'));
+    this.lastRender = new Map(); // round id -> key of its last successful render
     this.locks = new Map();
     this.parsed = new Map();
     this.pendingPush = new Set();
@@ -128,9 +143,10 @@ class Quartorium {
   }
 
   async createProject({ name, remoteUrl, baseBranch, username, token: tok }) {
+    remoteUrl = String(remoteUrl || '').trim().replace(/\/+$/, ''); // "https://host/me/paper/" works too
     if (!remoteUrl) throw new HttpError(400, 'A Git URL is required.');
     const res = this.db.run('INSERT INTO projects (name, remote_url, username, token, base_branch) VALUES (?, ?, ?, ?, ?)',
-      name || remoteUrl.replace(/\.git$/, '').split(/[/:]/).pop(), remoteUrl, username || null, tok || null, baseBranch || 'main');
+      String(name || '').trim() || remoteUrl.replace(/\.git$/, '').split(/[/:]/).pop() || remoteUrl, remoteUrl, username || null, tok || null, baseBranch || 'main');
     const project = this.project(Number(res.lastInsertRowid));
     try {
       const repo = this.repoFor(project);
@@ -186,6 +202,7 @@ class Quartorium {
     const res = this.db.run('INSERT INTO rounds (project_id, doc_path, title, branch, base_text, previous_round_id) VALUES (?, ?, ?, ?, ?, ?)',
       project.id, docPath, title || docTitle(text) || docPath, branch, text, previousRoundId);
     const round = this.round(Number(res.lastInsertRowid));
+    this.db.update('rounds', round.id, { main_checked_at: this.db.now() });
     // Comments in the format of earlier Quartorium versions are rewritten right away.
     const meta = splitQmd(text).meta;
     if (meta && !/<!--[ \t]*quartorium/.test(text)) this.db.update('rounds', round.id, { base_text: withMeta(text, meta), version: 2 });
@@ -318,6 +335,17 @@ class Quartorium {
     for (const m of this.db.all("SELECT * FROM members WHERE role = 'reviewer' AND copy_rev > committed_rev")) {
       if (force || m.updated_at < cutoff) await this.withLock(m.round_id, () => this.commitMember(m));
     }
+    if (!force) {
+      // Catch up with the main branch (the lead also pushes there from RStudio or VS Code).
+      const due = new Date(Date.now() - config.syncSeconds * 1000).toISOString();
+      for (const round of this.db.all("SELECT * FROM rounds WHERE status = 'open' AND (main_checked_at IS NULL OR main_checked_at < ?)", due)) {
+        try {
+          await this.withLock(round.id, () => this.syncMain(round));
+        } catch (e) {
+          console.error(`sync with main failed for round ${round.id}:`, e.message);
+        }
+      }
+    }
     for (const projectId of [...this.pendingPush]) {
       const project = this.project(projectId);
       this.pendingPush.delete(projectId);
@@ -347,9 +375,14 @@ class Quartorium {
       this.renderKeys.set(round.id, { head, lockedSig, key });
     }
     const cached = force ? null : this.renderer.get(key);
-    if (cached) return { key, status: cached.status, error: cached.error || null, outputs: cached.outputs, xrefs: cached.xrefs || {} };
+    if (cached) {
+      if (cached.status === 'ok') this.lastRender.set(round.id, key);
+      return { key, status: cached.status, error: cached.error || null, outputs: cached.outputs, xrefs: cached.xrefs || {} };
+    }
     this.renderer.ensure({ repo, ref, docPath: round.doc_path, text: round.base_text, key, force }).catch(() => {});
-    return { key, status: 'rendering', error: null, outputs: {}, xrefs: {} };
+    // Until the new render is ready, unchanged blocks keep showing their last output.
+    const previous = this.lastRender.has(round.id) ? this.renderer.get(this.lastRender.get(round.id)) : null;
+    return { key, status: 'rendering', error: null, outputs: previous?.outputs || {}, xrefs: previous?.xrefs || {} };
   }
 
   /** What can be cited: bibliography entries (read-only) and labels in the paper. */
@@ -510,7 +543,11 @@ class Quartorium {
     const head = await this.commitRound(round);
     member = this.member(member.id);
     const rejected = member.resolved.filter((r) => r.outcome === 'rejected');
-    const { copy, conflicts } = review.rebaseCopy({ copyBase: member.copy_base, copy: member.copy_text, base: baseProse, rejected });
+    const accepted = member.resolved.filter((r) => r.outcome === 'accepted');
+    const merged = review.rebaseCopy({ copyBase: member.copy_base, copy: member.copy_text, base: baseProse, rejected });
+    const { copy } = merged;
+    // An accepted change that was edited again later (by the lead, or on main) is not a suggestion any more.
+    const conflicts = merged.conflicts.filter((c) => !accepted.some((r) => sameKeys(r.old, review.keysOf(c.old)) && sameKeys(r.new, review.keysOf(c.new))));
     const slim = (items) => items.map((b) => ({ key: b.key, kind: b.kind, locked: b.locked, source: b.source, sep: b.sep }));
     const orphans = [...member.orphans, ...conflicts.map((c) => ({ old: slim(c.old), new: slim(c.new) }))];
     this.db.update('members', member.id, {
@@ -558,7 +595,11 @@ class Quartorium {
       } else if (ev.type === 'edited') {
         if (ev.data.by === member.name) continue;
         by = ev.data.by;
-      } else by = 'an update from the main branch';
+      } else {
+        const authors = ev.data.authors || [];
+        if (ev.actor === member.name || authors.includes(member.name)) continue; // you pushed it yourself
+        by = authors.length ? `${authors.join(', ')} (on ${ev.data.base || 'main'})` : 'an update from the main branch';
+      }
       raw.push({ oldItems, newItems, by, anchor: newItems.length ? { key: newItems[0].key, after: false } : (h.bStart > 0 ? { key: n[h.bStart - 1].key, after: true } : null) });
     }
     const view = await this.views(raw.flatMap((r) => [...r.oldItems, ...r.newItems]));
@@ -569,11 +610,16 @@ class Quartorium {
     return {
       id: round.id, title: round.title, docPath: round.doc_path, branch: round.branch, project: project.name, baseBranch: project.base_branch,
       status: round.status, finishedAt: round.finished_at, mergedAt: round.merged_at, previousRoundId: round.previous_round_id, nextRoundId: round.next_round_id,
+      keepMain: Boolean(project.keep_main), mainError: project.main_error || null,
     };
   }
 
   async load(ctx) {
     return this.withLock(ctx.round.id, async () => {
+      if (ctx.member.role === 'lead' && ctx.round.status === 'open' && ctx.round.main_checked_at < new Date(Date.now() - 15000).toISOString()) {
+        // The lead may have just pushed from RStudio: catch up before showing the paper.
+        try { await this.syncMain(ctx.round); } catch (e) { console.error('sync with main failed:', e.message); }
+      }
       if (ctx.member.role === 'reviewer' && ctx.round.status === 'open') await this.rebase(ctx.member, ctx.round);
       const { member, round, project } = this.refresh(ctx);
       const text = member.role === 'lead' ? round.base_text : (member.copy_text ?? member.copy_base);
@@ -697,9 +743,13 @@ class Quartorium {
         open ? `${open} undecided suggestion${open === 1 ? '' : 's'} left on the reviewers' branches` : null,
       ].filter(Boolean).join('\n');
       await this.commitRound(round, { author: authorOf(ctx.member), message: `Review round finished: ${round.title}\n\n${summary}` });
+      let main = null;
+      if (this.project(round.project_id).keep_main) {
+        try { main = await this.syncMain(round, { actor: ctx.member }); } catch (e) { main = { error: e.message }; }
+      }
       this.db.update('rounds', round.id, { status: 'finished', finished_at: this.db.now() });
       this.addEvent(round, ctx.member, 'round-finished', {});
-      return { ok: true };
+      return { ok: true, main };
     });
   }
 
@@ -711,46 +761,16 @@ class Quartorium {
     return { ok: true };
   }
 
-  /**
-   * Merge the round into the base branch and push it. Only when Git can merge
-   * without conflicts; otherwise explain how to do it by hand.
-   */
+  /** Put the round on the main branch now (also when main is not kept up to date automatically). */
   async mergeIntoMain(ctx) {
-    this.requireLead(ctx, `merge into the main branch`);
+    this.requireLead(ctx, 'merge into the main branch');
     return this.withLock(ctx.round.id, async () => {
       const round = this.round(ctx.round.id);
-      const project = this.project(round.project_id);
-      const repo = this.repoFor(project);
-      const base = project.base_branch;
       if (round.status === 'open') for (const m of this.members(round.id)) await this.commitMember(m);
-      const roundHead = await this.commitRound(round);
-      await repo.fetch();
-      const mainHead = await repo.resolve(`refs/remotes/origin/${base}`);
-      const result = await repo.mergeCommits(mainHead, roundHead, { author: authorOf(ctx.member), message: `Merge review round “${round.title}” into ${base}` });
-      if (!result.clean) {
-        throw new HttpError(409, `${base} has changes to the same lines as this round (${result.conflicts.join(', ')}). Use “Update from ${base}” first if it’s a small overlap, or merge the branch ${round.branch} with your Git tools or a pull request.`);
-      }
-      if (result.upToDate) return { upToDate: true };
-      try {
-        await repo.pushCommit(result.commit, base);
-      } catch (e) {
-        throw new HttpError(409, `Your Git host did not accept the push to ${base} (it may be protected). Open a pull/merge request from ${round.branch} into ${base} instead.\n\n${e.message.replace(/Authorization: Basic \S+/g, '***').slice(0, 500)}`);
-      }
-      await repo.fetch();
-      // Main and the round are now the same; keep working from there.
-      if (result.commit !== roundHead) {
-        await repo.setBranch(round.branch, result.commit, roundHead);
-        const text = await repo.readFile(`refs/heads/${round.branch}`, round.doc_path);
-        const r = this.round(round.id);
-        const changed = text !== r.base_text;
-        this.db.update('rounds', round.id, {
-          base_text: text, prose_version: r.prose_version + (changed ? 1 : 0), version: r.version + 1, committed_version: r.version + 1,
-        });
-      }
-      this.db.update('rounds', round.id, { merged_at: this.db.now(), merged_commit: result.commit });
-      this.addEvent(round, ctx.member, 'merged', { commit: result.commit });
-      this.pendingPush.add(project.id);
-      return { merged: true, commit: result.commit, fastForward: Boolean(result.fastForward) };
+      await this.commitRound(round);
+      const r = await this.syncMain(round, { actor: ctx.member, publish: true });
+      if (r.error) throw new HttpError(409, r.error);
+      return { merged: true, ...r };
     });
   }
 
@@ -869,31 +889,133 @@ class Quartorium {
 
   // ------------------------------------------------------------ syncing with the base branch
 
+  /** "Sync with main now": catch up with main, and update main if the project keeps it up to date. */
   async sync(ctx) {
     this.requireLead(ctx, 'update the round');
     this.assertOpen(ctx.round);
     return this.withLock(ctx.round.id, async () => {
-      const round = this.round(ctx.round.id);
-      const project = this.project(round.project_id);
-      const repo = this.repoFor(project);
-      await this.commitRound(round);
-      await repo.fetch();
-      const result = await repo.mergeInto(round.branch, `refs/remotes/origin/${project.base_branch}`, {
-        author: authorOf(ctx.member), message: `Bring in the latest ${project.base_branch}`,
+      const r = await this.syncMain(this.round(ctx.round.id), { actor: ctx.member });
+      if (r.error) throw new HttpError(409, r.error);
+      return r;
+    });
+  }
+
+  /** Turn automatic updates of the main branch on or off for this repository. */
+  setKeepMain(ctx, on) {
+    this.requireLead(ctx, 'change how main is updated');
+    this.db.update('projects', ctx.project.id, { keep_main: on ? 1 : 0, main_error: null });
+    if (on) this.db.update('rounds', ctx.round.id, { main_checked_at: null }); // catch up at the next tick
+    return { keepMain: Boolean(on) };
+  }
+
+  /**
+   * Keep the round and the main branch in step. The lead also works on the
+   * paper in RStudio or VS Code and pushes to main, while collaborators work
+   * in the round. Caller holds the round lock.
+   *
+   * 1. New commits on main are merged into the round, paragraph by paragraph
+   *    (code, figures and other files simply come along). Where main and the
+   *    round changed the same paragraph, main's version is kept and the
+   *    round's version is attached to it as a comment, so nothing is lost.
+   * 2. If the project keeps main up to date (the default), the round's
+   *    commits are then put on main, normally as a fast-forward, so that a
+   *    `git pull` brings the accepted text and the comments.
+   *
+   * Returns { pulled, published, conflicts, error }.
+   */
+  async syncMain(round, { actor = null, publish } = {}) {
+    round = this.round(round.id);
+    const project = this.project(round.project_id);
+    const repo = this.repoFor(project);
+    const base = project.base_branch;
+    const ref = `refs/heads/${round.branch}`;
+    const mainRef = `refs/remotes/origin/${base}`;
+    const out = { pulled: false, published: false, conflicts: 0, error: null };
+    if (publish === undefined) publish = Boolean(project.keep_main) && config.push;
+    this.db.update('rounds', round.id, { main_checked_at: this.db.now() });
+    await repo.fetch();
+    const mainHead = await repo.resolve(mainRef);
+    if (!mainHead) return { ...out, error: `The branch ${base} was not found in the repository.` };
+
+    let head = await repo.resolve(ref);
+    if (!(await repo.isAncestor(mainHead, head))) {
+      head = await this.commitRound(round);
+      const result = await repo.mergeCommits(head, mainHead, {
+        author: actor ? authorOf(actor) : null,
+        message: `Bring in the latest ${base}`,
+        text: { path: round.doc_path, merge: (b, o, t) => this.mergePaper(b, o, t, base) },
       });
       if (!result.clean) {
-        throw new HttpError(409, `The latest ${project.base_branch} changes the same lines as this round (${result.conflicts.join(', ')}). Merge ${round.branch} by hand with your Git tools, or finish this round first.`);
+        out.error = `${base} and this round changed ${result.conflicts.join(', ')} in ways that can't be combined automatically. Merge the branch ${round.branch} into ${base} with your Git tools.`;
+        this.db.update('projects', project.id, { main_error: out.error });
+        return out;
       }
-      if (result.upToDate) return { upToDate: true };
-      const text = await repo.readFile(`refs/heads/${round.branch}`, round.doc_path);
-      const r = this.round(round.id);
-      const nb = review.blocksOf(prose(text)).blocks;
-      const keys = review.diffBlocks(review.blocksOf(prose(r.base_text)).blocks, nb).flatMap((h) => review.keysOf(nb.slice(h.bStart, h.bEnd)));
-      if (keys.length) this.addEvent(round, ctx.member, 'main', { keys });
-      this.db.update('rounds', round.id, { base_text: text, prose_version: r.prose_version + 1, version: r.version + 1, committed_version: r.version + 1, updated_at: this.db.now() });
-      this.pendingPush.add(project.id);
-      return { upToDate: false };
-    });
+      if (result.commit !== head) {
+        await repo.setBranch(round.branch, result.commit, head);
+        const text = await repo.readFile(ref, round.doc_path);
+        const r = this.round(round.id);
+        const nb = review.blocksOf(prose(text)).blocks;
+        const keys = review.diffBlocks(review.blocksOf(prose(r.base_text)).blocks, nb).flatMap((h) => review.keysOf(nb.slice(h.bStart, h.bEnd)));
+        if (keys.length) {
+          // Who wrote the new commits on main (usually the lead, from RStudio), for "since your last visit".
+          const authors = (await repo.out(['log', '--format=%an', `${result.commit}^1..${mainHead}`, '--', round.doc_path])).split('\n').filter(Boolean);
+          this.addEvent(r, actor, 'main', { keys, authors: [...new Set(authors)], base });
+        }
+        this.db.update('rounds', round.id, {
+          base_text: text, prose_version: r.prose_version + (text === r.base_text ? 0 : 1), version: r.version + 1, committed_version: r.version + 1, updated_at: this.db.now(),
+        });
+        head = result.commit;
+        out.pulled = true;
+        out.conflicts = result.textConflicts.length;
+        if (out.conflicts) for (const l of this.leads(round.id)) this.addNotice(l.id, { type: 'main-conflict', count: out.conflicts, text: base });
+        this.pendingPush.add(project.id);
+      }
+    }
+
+    if (publish && head !== mainHead) {
+      if (!config.push) return { ...out, error: 'Pushing is turned off on this server (QUARTORIUM_PUSH=0).' };
+      try {
+        await repo.pushCommit(head, base);
+        await repo.git(['update-ref', mainRef, head]);
+        this.db.update('projects', project.id, { main_error: null });
+        this.db.update('rounds', round.id, { merged_at: this.db.now(), merged_commit: head });
+        this.pendingPush.add(project.id);
+        out.published = true;
+      } catch (e) {
+        await repo.fetch().catch(() => {});
+        const now = await repo.resolve(mainRef);
+        if (now && now !== mainHead) return out; // someone pushed to main meanwhile: catch up next time
+        const why = e.message.replace(/Authorization: Basic \S+/g, '***').slice(0, 400);
+        out.error = `Your Git host did not accept updates to ${base} (it may be protected), so Quartorium stopped updating it automatically. Merge the branch ${round.branch} with a pull/merge request instead.\n\n${why}`;
+        this.db.update('projects', project.id, { keep_main: 0, main_error: out.error });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Merge two versions of the paper (see review.mergeQmd). Where both sides
+   * changed the same paragraph, main's version is kept and the round's
+   * version is attached as a comment for the lead to look at.
+   */
+  async mergePaper(baseText, roundText, mainText, base) {
+    const merged = review.mergeQmd(baseText, roundText, mainText);
+    if (!merged.conflicts.length) return merged;
+    const view = await this.views(merged.conflicts.flatMap((c) => [...c.new, ...c.theirs]));
+    const meta = metaOf(merged.text);
+    const now = this.db.now();
+    for (const c of merged.conflicts) {
+      const kept = c.theirs.map(view);
+      const other = c.new.map(view).map((v) => v.text).join('\n\n');
+      const text = other
+        ? `This was changed in Quartorium and on ${base} at the same time. The version from ${base} is kept; the Quartorium version was:\n\n${other}`
+        : `This was changed on ${base} while Quartorium removed it. The version from ${base} is kept.`;
+      meta.comments.push({
+        id: 'c' + crypto.randomBytes(5).toString('hex'), anchor: { quote: quoteOf(kept), prefix: '', suffix: '' },
+        author: 'Quartorium', created: now, resolved: false, thread: [{ author: 'Quartorium', created: now, text }], agree: [],
+      });
+    }
+    return { text: withMeta(merged.text, meta), conflicts: merged.conflicts };
   }
 
   // ------------------------------------------------------------ history

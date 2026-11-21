@@ -23,6 +23,7 @@ const NOTICE_TEXT = {
   conflict: (n) => `${n.count} of your changes touched text that was rewritten meanwhile. They are kept under Changes as outdated suggestions.`,
   finished: (n) => `${n.by} finished their review${n.text ? `: “${n.text}”` : '.'}`,
   'new-round': (n) => `${n.by} started a new round: “${n.text}”. What changed since your last visit is highlighted.`,
+  'main-conflict': (n) => `${n.count === 1 ? 'A paragraph was' : `${n.count} paragraphs were`} changed both here and on ${n.text}. The ${n.text} version is kept; the other version is attached as a comment.`,
 };
 
 export default function ReviewPage() {
@@ -159,7 +160,9 @@ export default function ReviewPage() {
     if (!data) return undefined;
     const tick = async () => {
       try {
-        const a = await api.get(`/r/${token}/activity?renderKey=${encodeURIComponent(live.render.key || '')}`);
+        // Outputs are only sent again when the render changed or is still running.
+        const known = live.render.status === 'rendering' ? '' : live.render.key || '';
+        const a = await api.get(`/r/${token}/activity?renderKey=${encodeURIComponent(known)}`);
         applyLive(a);
         if (a.round?.status !== data.round.status) { await save(); await load({ quiet: true }); return; }
         if (a.proseVersion !== proseVersion.current && !halted.current) setStale((s) => s || { reason: 'updated' });
@@ -167,7 +170,7 @@ export default function ReviewPage() {
     };
     const id = setInterval(tick, POLL_EVERY);
     return () => clearInterval(id);
-  }, [data, token, live.render.key, applyLive, save, load]);
+  }, [data, token, live.render.key, live.render.status, applyLive, save, load]);
 
   // ---------------------------------------------------------------- editor
   const extensions = useMemo(() => [
@@ -283,7 +286,10 @@ export default function ReviewPage() {
   };
 
   // ---------------------------------------------------------------- actions
-  const refresh = useCallback(async () => applyLive(await api.get(`/r/${token}/activity?renderKey=${encodeURIComponent(live.render.key || '')}`)), [token, live.render.key, applyLive]);
+  const refresh = useCallback(async () => {
+    const known = live.render.status === 'rendering' ? '' : live.render.key || '';
+    applyLive(await api.get(`/r/${token}/activity?renderKey=${encodeURIComponent(known)}`));
+  }, [token, live.render.key, live.render.status, applyLive]);
   const guarded = (fn) => async (...args) => {
     try { return await fn(...args); } catch (e) { toast(e.message, 'error'); if (e.data?.reload) await load({ quiet: true }); throw e; }
   };
@@ -334,18 +340,26 @@ export default function ReviewPage() {
     try {
       await save();
       if (kind === 'sync') {
-        if (!window.confirm(`Bring the latest version of ${base} into this round? Use this after you pushed changes from your own editor.`)) return;
         const r = await api.post(`/r/${token}/sync`);
-        if (r.upToDate) toast(`Already up to date with ${base}.`);
-        else { await load({ quiet: true }); toast(`Brought in the latest ${base}.`); }
+        if (r.pulled) await load({ quiet: true });
+        const parts = [r.pulled ? `Brought in the latest ${base}` : `Nothing new on ${base}`, r.published ? `${base} is up to date with this round` : null];
+        toast(parts.filter(Boolean).join('; ') + '.');
+      } else if (kind === 'keep-main') {
+        const on = !(live.round || data.round).keepMain;
+        if (on && !window.confirm(`Keep ${base} up to date automatically?\n\nAccepted text, your edits here and comments go to ${base}, so a git pull in RStudio brings them.`)) return;
+        await api.post(`/r/${token}/round/keep-main`, { on });
+        if (on) await api.post(`/r/${token}/sync`).catch((e) => toast(e.message, 'error'));
+        await load({ quiet: true });
+        toast(on ? `${base} is kept up to date.` : `${base} is no longer updated automatically. Use “Merge into ${base}” when you want.`);
       } else if (kind === 'merge') {
-        if (!window.confirm(`Merge this round's version of the paper into ${base} and push it?\n\nOnly done when Git can merge without conflicts.`)) return;
+        if (!window.confirm(`Put this round's version of the paper on ${base} and push it?`)) return;
         const r = await api.post(`/r/${token}/round/merge`);
         await load({ quiet: true });
-        toast(r.upToDate ? `${base} already contains this round.` : `Merged into ${base}.`);
+        toast(r.published ? `Merged into ${base}.` : `${base} already contains this round.`);
       } else if (kind === 'finish') {
-        await api.post(`/r/${token}/round/finish`, { removeResolved: options.removeResolved });
+        const f = await api.post(`/r/${token}/round/finish`, { removeResolved: options.removeResolved });
         let msg = 'Round finished. Reviewers can still read the paper but not change it.';
+        if (f.main?.error) toast(f.main.error, 'error');
         if (options.merge) {
           try { await api.post(`/r/${token}/round/merge`); msg += ` Merged into ${base}.`; } catch (e) { toast(e.message, 'error'); }
         }
@@ -424,7 +438,7 @@ export default function ReviewPage() {
         <div className={`banner ${stale.reason === 'conflict' ? 'warn' : ''}`}>
           {stale.reason === 'conflict'
             ? <>This paper was changed in another window or by another lead. Reload to continue{dirty.current ? ' (your last few seconds of typing may be lost)' : ''}.</>
-            : isLead ? <>The paper was changed elsewhere. Reload to see the latest version.</>
+            : isLead ? <>The paper was changed elsewhere (for example a push to {round.baseBranch}). Reload to see the latest version.</>
               : <>The lead author has updated the paper. Reload to see the latest version — your own edits are kept.</>}
           <button type="button" className="small" onClick={reload}>Reload</button>
         </div>
@@ -434,6 +448,12 @@ export default function ReviewPage() {
           Since your last visit ({timeAgo(data.sinceLastVisit.at)}): {since.length} paragraph{since.length === 1 ? '' : 's'} changed by {sinceBy.join(', ')} — highlighted in the text.
           <button type="button" className="ghost small" onClick={() => { setTab('changes'); selectSince(0); }}>Show the first</button>
           <button type="button" className="ghost small" onClick={() => { setShowSince(false); setActiveSince(null); }}>Hide</button>
+        </div>
+      )}
+      {isLead && round.mainError && (
+        <div className="banner warn">
+          {round.mainError.split('\n\n')[0]}
+          {round.mainError.includes('\n\n') && <details><summary>Details</summary><pre>{round.mainError.split('\n\n').slice(1).join('\n\n')}</pre></details>}
         </div>
       )}
       {isLead && live.pushError && <div className="banner warn">Could not push to the Git remote: <code>{live.pushError.slice(0, 300)}</code> (work is safe on the server and will be pushed when this is fixed).</div>}

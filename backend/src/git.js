@@ -188,20 +188,52 @@ class Repo {
 
   /**
    * Merge two commits without a working directory (git >= 2.38) and without
-   * moving any branch. Returns { clean, commit } or { clean: false, conflicts }.
-   * When one side already contains the other, no merge commit is made.
+   * moving any branch. Returns { clean, commit, textConflicts } or
+   * { clean: false, conflicts }. When one side already contains the other, no
+   * merge commit is made.
+   *
+   * `text: { path, merge }` merges one file with a function of its own
+   * (base, ours, theirs) => { text, conflicts } instead of Git's line merge.
+   * Quartorium uses this for the paper, so that edits to different
+   * paragraphs never conflict and comment threads are merged by id.
    */
-  async mergeCommits(ours, theirs, { author, message }) {
-    if (await this.isAncestor(theirs, ours)) return { clean: true, commit: ours, upToDate: true };
-    if (await this.isAncestor(ours, theirs)) return { clean: true, commit: theirs, fastForward: true };
+  async mergeCommits(ours, theirs, { author, message, text = null }) {
+    if (await this.isAncestor(theirs, ours)) return { clean: true, commit: ours, upToDate: true, textConflicts: [] };
+    if (await this.isAncestor(ours, theirs)) return { clean: true, commit: theirs, fastForward: true, textConflicts: [] };
     const r = await this.git(['merge-tree', '--write-tree', '--name-only', ours, theirs], { allowCodes: [0, 1] });
     const lines = r.stdout.split('\n');
-    if (r.code === 1) {
-      const conflicts = lines.slice(1).filter((l) => l && !l.startsWith('Auto-merging') && !l.startsWith('CONFLICT'));
-      return { clean: false, conflicts: [...new Set(conflicts)] };
+    let tree = lines[0].trim();
+    let conflicts = r.code === 1 ? [...new Set(lines.slice(1).filter((l) => l && !l.startsWith('Auto-merging') && !l.startsWith('CONFLICT')))] : [];
+    let textConflicts = [];
+    if (text) {
+      const base = (await this.out(['merge-base', ours, theirs], { allowCodes: [0, 1] })).split('\n')[0];
+      const [b, o, t] = await Promise.all([base ? this.readFile(base, text.path) : null, this.readFile(ours, text.path), this.readFile(theirs, text.path)]);
+      if (o !== null && t !== null && o !== t && b !== o && b !== t) {
+        const merged = await text.merge(b ?? '', o, t);
+        tree = await this.replaceInTree(tree, text.path, merged.text);
+        conflicts = conflicts.filter((c) => c !== text.path);
+        textConflicts = merged.conflicts;
+      }
     }
-    const commit = await this.commitTree({ tree: lines[0].trim(), parents: [ours, theirs], author, message });
-    return { clean: true, commit };
+    if (conflicts.length) return { clean: false, conflicts };
+    const commit = await this.commitTree({ tree, parents: [ours, theirs], author, message });
+    return { clean: true, commit, textConflicts };
+  }
+
+  /** A copy of `tree` with one file's content replaced. */
+  async replaceInTree(tree, filepath, content) {
+    const blob = await this.out(['hash-object', '-w', '--stdin'], { input: content });
+    const index = path.join(os.tmpdir(), `quartorium-index-${process.pid}-${crypto.randomBytes(6).toString('hex')}`);
+    const env = { GIT_INDEX_FILE: index };
+    try {
+      await this.git(['read-tree', tree], { env });
+      const ls = await this.out(['ls-tree', tree, '--', filepath]);
+      const mode = ls.split(' ')[0] || '100644';
+      await this.git(['update-index', '--add', '--cacheinfo', `${mode},${blob},${filepath}`], { env });
+      return await this.out(['write-tree'], { env });
+    } finally {
+      fs.rmSync(index, { force: true });
+    }
   }
 
   /** Merge `theirs` into a local branch. Fast-forwards when possible. */
@@ -243,15 +275,16 @@ class Repo {
    * as rejections or "round finished" change no text but belong to the story).
    */
   async log(ref, filepath, limit = 50) {
-    const fmt = '--format=%H%x00%an%x00%aI%x00%s';
-    const parse = (out) => out.split('\n').filter(Boolean).map((l) => {
-      const [hash, author, date, subject] = l.split('\0');
-      return { hash, author, date, subject };
-    });
-    const touched = await this.git(['log', `-n${limit}`, fmt, ref, '--', filepath], { allowCodes: [0, 128] });
-    const ours = await this.git(['log', `-n${limit}`, fmt, `--committer=${config.committerName}`, ref], { allowCodes: [0, 128] });
-    const all = new Map([...parse(touched.stdout), ...parse(ours.stdout)].map((c) => [c.hash, c]));
-    return [...all.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).slice(0, limit);
+    // Newest first, children always before their parents (commits made in the
+    // same second keep their real order).
+    const all = await this.git(['log', '--date-order', '-n500', '--format=%H%x00%an%x00%aI%x00%cn%x00%s', ref], { allowCodes: [0, 128] });
+    const touched = await this.git(['log', '--format=%H', ref, '--', filepath], { allowCodes: [0, 128] });
+    const touches = new Set(touched.stdout.split('\n').filter(Boolean));
+    return all.stdout.split('\n').filter(Boolean).map((l) => {
+      const [hash, author, date, committer, subject] = l.split('\0');
+      return { hash, author, date, committer, subject };
+    }).filter((c) => touches.has(c.hash) || c.committer === config.committerName).slice(0, limit)
+      .map(({ committer, ...c }) => c);
   }
 }
 

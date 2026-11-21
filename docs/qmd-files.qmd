@@ -207,6 +207,15 @@ code block and marked the prose with `[text]{.comment ref="id"}` spans. Such fil
 migrated automatically the first time they're opened: the spans are removed from the text,
 and the comments become quote-anchored comments in the new block.
 
+## When branches are merged {#merging}
+
+When main and a review round are merged (see [Main stays up to date](git.qmd#main)), the
+paper is not merged line by line like other files. Quartorium merges it per block, with the
+same splitting as above: blocks changed on one side are taken from that side, so edits to
+neighbouring paragraphs never conflict. The comment block is merged per thread, so two
+people commenting at the same time never produce broken JSON. Where both sides changed the
+same paragraph, main's version is kept and the other version is attached as a comment.
+
 ## What is never changed
 
 - The YAML header, code, tables, equations, divs, comments and shortcodes.

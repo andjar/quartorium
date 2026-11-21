@@ -48,8 +48,8 @@ the paper or its history.
 **Plain Git, no forge API.** The server keeps a bare clone of each repository and writes
 commits with Git's plumbing commands (`hash-object`, `update-index`, `write-tree`,
 `commit-tree`, `update-ref`, `merge-tree`), using a temporary index. It never needs a working
-copy, never runs `checkout`, and never touches your main branch except for an explicit
-*Merge into main*. Credentials are passed per command as an HTTP header and are never written
+copy and never runs `checkout`. On main it only ever adds commits on top: a fast-forward to
+the round, after merging what is new on main into the round first. Credentials are passed per command as an HTTP header and are never written
 into the repository's configuration.
 
 **Blocks, not characters.** Changes are tracked per paragraph (top-level block). Because
@@ -68,14 +68,14 @@ SQLite driver (no native modules to compile). Frontend: React, TipTap, KaTeX, di
 
 | Module | Responsibility |
 |---|---|
-| `server.js` | Creates the Express app, serves the built frontend, commits pending drafts every 15 s and on shutdown |
+| `server.js` | Creates the Express app, serves the built frontend, commits pending drafts and syncs with main on a timer, flushes on shutdown |
 | `api.js` | HTTP routes (see [API](#api)) |
 | `auth.js` | Admin password and signed session cookie; personal links need no login |
 | `config.js` | Settings from environment variables |
 | `db.js` | SQLite schema, small query helpers, JSON columns, migrations |
-| `rounds.js` | The collaboration flow: projects, rounds, people, saving, changes, accepting, comments, commits, finishing, merging, next round, history |
-| `review.js` | Block-level change tracking: diff, three-way merge, apply a change, bring a copy up to date |
-| `git.js` | Bare clone, fetch, push, plumbing commits, merges, log, file reads |
+| `rounds.js` | The collaboration flow: projects, rounds, people, saving, changes, accepting, comments, commits, syncing with main, finishing, next round, history |
+| `review.js` | Block-level change tracking: diff, three-way merge, apply a change, bring a copy up to date, merge two versions of the paper (`mergeQmd`) |
+| `git.js` | Bare clone, fetch, push, plumbing commits, merges (with a custom merge for the paper), log, file reads |
 | `render.js` | Quarto rendering, extracting each locked block's output, cross-reference numbers, asset cache |
 | `references.js` | Reading the bibliography (`.bib`, `.bibtex`, CSL JSON via Pandoc) and labels in the paper |
 | `mail.js` | Optional e-mails (invitations, new round, review finished) |
@@ -223,6 +223,37 @@ This happens only on page load, never while someone is typing, so text never shi
 the cursor. The next commit on the reviewer's branch records the round commit as a second
 parent.
 
+### Syncing with main
+
+```{mermaid}
+sequenceDiagram
+  participant M as main (remote)
+  participant S as Server
+  participant R as round branch
+  Note over S: every minute, when a lead opens the paper,<br/>or "Sync with main now"
+  S->>M: fetch
+  alt main has commits the round doesn't
+    S->>R: commit pending edits
+    S->>R: merge main: other files by Git,<br/>the paper paragraph by paragraph (mergeQmd)
+    Note over S,R: same paragraph changed on both sides:<br/>main's version kept, the round's attached as a comment
+  end
+  opt main is kept up to date
+    S->>M: push the round's head to main (fast-forward)
+  end
+```
+
+`mergeQmd` splits the base, round and main versions of the paper into blocks, takes the
+comment block out of all three, and runs the same three-way block merge used for reviewers'
+copies. Blocks changed on one side are taken from that side, and blocks added at the same
+place on both sides are both kept. When both sides changed the same block, main wins and the
+round's version is returned so that it can be attached as a comment. Comment threads are
+merged by id: replies and agreements from both sides are combined, and a thread removed on
+one side stays removed. The merge commit is then written with Git's plumbing like any other.
+
+If pushing to main fails because main moved in the meantime, the next sync catches up. If it
+fails for another reason (a protected branch), automatic updates are switched off for the
+repository and the lead sees why.
+
 ## Rendering
 
 ::: {.column-page-right}
@@ -239,7 +270,7 @@ flowchart LR
 
 - The cache key is a hash of the repository tree without the paper, the paper's path, and
   the source of every locked block. Prose edits don't change it; editing a code chunk on main
-  and *Update from main* do.
+  and a push to main that changes a code chunk do.
 - Renders run one at a time, in the background. The page shows the source of locked blocks
   until the output is ready.
 - Code chunks are shown as their output (the code is available under *Show source*).
@@ -287,7 +318,8 @@ only credential, and lead-only actions check the role.
 | POST | `/r/:token/finish` | finish my review (with a note) | reviewer |
 | POST | `/r/:token/round/finish` · `/reopen` · `/merge` · `/next` | round lifecycle | lead |
 | GET | `/r/:token/rounds` | earlier rounds | lead |
-| POST | `/r/:token/sync` | update from main | lead |
+| POST | `/r/:token/sync` | sync with main now: bring in main, and update main if it's kept up to date | lead |
+| POST | `/r/:token/round/keep-main` | keep main up to date automatically, on or off | lead |
 | POST | `/r/:token/render` | render again | link |
 | GET | `/r/:token/history`, `/history/:hash` | history, and one entry's changes | link |
 | GET | `/render/:key/*path` | rendered images and other assets (immutable) | anyone with the key |
@@ -301,6 +333,9 @@ only credential, and lead-only actions check the role.
 - `review.test.js`: diff, merge, competing and outdated suggestions;
 - `git.test.js`: plumbing commits, merges and pushes against a local bare remote;
 - `render.test.js`: a real Quarto render with a figure, a table and cross-references;
+- `main-sync.test.js`: the lead working in RStudio during a round: code, figures and text
+  pushed to main come into the round, accepted text reaches main, the same paragraph changed
+  on both sides, a protected main;
 - `flow.test.js`: a complete review: invite, edit, comment, cite, accept, decline, finish
   review, leave the page, history, finish round, merge into main, next round with the same
   links, e-mails.

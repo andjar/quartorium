@@ -16,7 +16,8 @@ on any Git host (Codeberg, Forgejo, GitLab, GitHub, or a plain server).
 - **Your file stays yours**: untouched text keeps its exact bytes, code and YAML are locked,
   and a one-word edit is a one-line Git diff. Comments live invisibly at the end of the `.qmd`.
 - **Plain Git, no forge API**: rounds and reviewers are branches; `git blame` shows who wrote
-  each sentence.
+  each sentence. Keep working in RStudio and pushing to main during a round: Quartorium
+  merges paragraph by paragraph and keeps main up to date.
 
 ## Documentation
 
@@ -24,7 +25,7 @@ The full documentation is a Quarto website in [`docs/`](docs/). Preview it with
 `quarto preview docs`.
 
 - [Getting started](docs/getting-started.qmd): install, connect a repository, configuration
-- [User guide](docs/guide.qmd): for reviewers and lead authors
+- [User guide](docs/guide.qmd): for reviewers and lead authors, and [which Quarto features are supported](docs/guide.qmd#supported)
 - [Git and the paper trail](docs/git.qmd): branches, what is committed when, merging into main
 - [How .qmd files are changed](docs/qmd-files.qmd): blocks, Pandoc, citations, the comment block
 - [Architecture](docs/architecture.qmd): components, data model, API
@@ -45,8 +46,8 @@ QUARTORIUM_ADMIN_PASSWORD='choose-one' npm start
 
 Open <http://localhost:8000>, log in, connect a repository and start a review round.
 
-For development, run `npm run dev:backend` and `npm run dev:frontend` in two terminals and
-open <http://localhost:5173>. Run the tests with `npm test`.
+For development, run `npm run dev` (the backend and the frontend together) and open
+<http://localhost:5173>. Run the tests with `npm test`.
 
 ## License
 
