@@ -1,0 +1,215 @@
+---
+title: "How .qmd files are changed"
+---
+
+Quartorium edits your `.qmd` file the way a careful co-author with a text editor would: it
+changes the words that were edited and nothing else. Code, YAML, tables, equations and your
+formatting habits survive byte for byte. This page explains how.
+
+## The guarantee
+
+> **A block that nobody edited is written back with exactly the bytes it had.**
+> Only edited paragraphs are regenerated, and locked blocks (code, YAML, tables, equations,
+> callouts, …) can't be changed from the browser at all.
+
+So a Git diff of a review round shows the sentences people changed, not a reformatted file.
+The test suite checks this: opening and saving an unedited document must return the
+identical file.
+
+## Step 1: split the file into blocks
+
+The file is cut into top-level blocks at blank lines, using Quarto's own rules for fences,
+divs, and so on. Each block remembers its exact text and the exact whitespace after it, so
+joining the blocks gives back the original file.
+
+| Kind | Example | In the browser |
+|---|---|---|
+| Prose | paragraphs, headings, lists, block quotes, `***` | **editable** |
+| YAML header | `---` … `---` | locked; title, authors and date are shown |
+| Code chunk | ```` ```{python} ```` … ```` ``` ```` | locked; its output is shown |
+| Code block | ```` ```r ```` … ```` ``` ```` (not executed) | locked |
+| Raw block | ```` ```{=latex} ```` | locked |
+| Fenced div | `::: {.callout-note}` … `:::`, `::: {#fig-x}`, `::: {#refs}` | locked; rendered output is shown |
+| Display math | `$$ … $$ {#eq-x}` | locked; rendered with KaTeX |
+| Table | pipe or grid table, with its `: caption {#tbl-x}` line | locked; rendered output is shown |
+| Shortcode line | `{{{< pagebreak >}}}`, `{{{< include _intro.qmd >}}}` | locked |
+| Footnote / link definition | `[^1]: …`, `[quarto]: https://…` | locked |
+| HTML comment | `<!-- note to self -->` | locked; shown as a hidden note |
+| HTML block | `<div>`, `<figure>`, … at the start of a line | locked |
+
+A prose block that turns out to contain something the editor can't represent (for example a
+definition list or a line block) is locked as a whole, so it's shown and kept but can't be
+edited.
+
+Locked blocks are never sent back from the browser as text. The editor holds only their
+*key* (a hash of their content). When a document is saved, the server puts the original
+source back by key and refuses the save (HTTP 409) if locked blocks were removed, added or
+reordered. A browser therefore can't change or inject code, even a modified one.
+
+## Step 2: prose goes through Pandoc
+
+Editable blocks are parsed with Pandoc (the one bundled with Quarto) into Pandoc's document
+model, and from there into the editor. Many blocks go through one Pandoc call: each is
+wrapped in a fenced div with a known id, `::: {#qtmseg-3}`, and the results are cut apart
+again.
+
+Pandoc's *smart* extension is switched off in both directions, so `--`, `"quotes"` and
+`p. 3` are written back as typed, not as typographic characters or non-breaking spaces.
+
+### Things the editor shows as chips
+
+Inline elements that collaborators shouldn't retype are shown as small grey *chips*. A chip
+carries its exact Pandoc representation and is written back unchanged. It can be deleted or
+moved, but not edited.
+
+| Inline syntax | Shown as |
+|---|---|
+| `@smith2020`, `[@smith2020, p. 3; @doe2019]` | the citation, e.g. "Smith 2020, p. 3; Doe 2019" |
+| `@fig-mpg`, `@tbl-cars`, `@eq-energy`, `@sec-intro` | the cross-reference, e.g. "Figure 1" |
+| `$E = mc^2$` | the formula, rendered |
+| `` `r nrow(mtcars)` `` and other inline code | the code |
+| images, raw inline HTML or LaTeX | the alt text or the markup |
+
+Some syntax would be damaged by a Pandoc round trip, so it's wrapped as raw Markdown before
+Pandoc sees it and comes back byte for byte:
+
+| Protected syntax | Why |
+|---|---|
+| `{{{< meta title >}}}` and other shortcodes | Pandoc would escape `<` and `>` |
+| `^[an inline footnote]` | the note's content would be rewritten |
+| `[^long]` footnote references | the definition lives in another block |
+| `[text][ref]`, `[ref]` reference links | the link definition lives in another block |
+| `$$ … $$ {#eq-x}` inside a paragraph | the label would be separated |
+
+The editor supports bold, italic, strikethrough, underline, superscript, subscript, small
+caps, links, spans with attributes (`[text]{.mark}`), line breaks, headings, lists and block
+quotes.
+
+## Step 3: write back only what changed
+
+When a draft is saved, each top-level paragraph in the editor still knows which original
+block it came from. For every block, Quartorium compares the edited content with the original
+in Pandoc's model:
+
+- **unchanged**: the original bytes are used, including your line breaks, spacing and
+  choice of `*` or `_`;
+- **changed**: Pandoc writes the block as Markdown;
+- **new**: written by Pandoc, separated by a blank line.
+
+### Line breaks are kept
+
+Pandoc writes a paragraph as one long line. If you wrap lines by hand, for example one
+sentence per line, Quartorium puts the line breaks back wherever the words around them are
+unchanged. A one-word edit shows up in Git as a one-line diff.
+
+### A real example
+
+A co-author changes "like" to "as" in a hand-wrapped paragraph that also contains bold
+text, a citation with a page number, inline R code and inline math, and adds a comment. This
+is the complete `git diff`:
+
+```diff
+@@ -16,7 +16,7 @@ format:
+
+ Cars are *everywhere*, and **fuel efficiency** matters (a lot).
+ This paragraph uses one sentence per line,
+-and wraps lines by hand -- like many authors do.
++and wraps lines by hand -- as many authors do.
+ See @fig-mpg for the main result and [@smith2020, p. 3; @doe2019] for background.
+ Inline code `r nrow(mtcars)` gives the sample size, and $E = mc^2$ is famous.
+
+@@ -82,3 +82,31 @@ Results are summarised in @tbl-cars and @eq-energy.
+
+ ::: {#refs}
+ :::
++
++<!-- quartorium
++{
++  "comments": [
++    {
++      "id": "c1",
++      "anchor": {
++        "quote": "fuel efficiency",
++        "prefix": "and ",
++        "suffix": " matters"
++      },
++      "author": "Anna Example",
++      "created": "2026-11-21T10:02:00.000Z",
++      "resolved": false,
++      "thread": [
++        {
++          "author": "Anna Example",
++          "created": "2026-11-21T10:02:00.000Z",
++          "text": "Define \"fuel efficiency\" -\u002d mpg or l/100 km?"
++        }
++      ],
++      "agree": [
++        "Bob Builder"
++      ]
++    }
++  ]
++}
++-->
+```
+
+The paragraph was rewritten by Pandoc, but the diff shows one changed line. `--`, the
+citation and the inline code are untouched.
+
+## Citations {#citations}
+
+Citations inserted in the browser are written as ordinary Pandoc citations:
+
+| In the picker | Written to the file |
+|---|---|
+| Smith 2020 | `[@smith2020]` |
+| Smith 2020 and Doe 2019, page 3 | `[@smith2020; @doe2019, p. 3]` |
+| *Name in the sentence* | `@smith2020` |
+| Figure 1 | `@fig-mpg` |
+
+The picker lists the entries of the paper's bibliography (from `bibliography:` in the YAML
+header or the project's `_quarto.yml`; `.bib`, `.bibtex` and CSL JSON are supported) and the
+labels of figures, tables, equations and sections in the paper. A new citation is accepted
+only if every key is one of these, and the server rebuilds it from scratch, so nothing else
+can be smuggled in through a citation.
+
+Quartorium never changes the bibliography file. A missing reference becomes a comment of
+type `reference` at that point in the text, for the lead author to add to the `.bib`.
+
+## Comments {#comments}
+
+Comment threads are stored at the very end of the `.qmd`, in an HTML comment:
+
+```html
+<!-- quartorium
+{ "comments": [ { "id": "c1", "anchor": { "quote": "…", "prefix": "…", "suffix": "…" }, … } ] }
+-->
+```
+
+- Quarto ignores HTML comments in every output format (HTML, PDF, Word), so comments never
+  appear in the rendered paper.
+- The prose has no markers in it. A comment is anchored by *quoting* the commented text plus
+  a little context before and after it. If the quoted text occurs more than once, the
+  context picks the right place. If the quoted words are edited away, the comment stays in
+  the list with its original quote, marked as no longer in the document.
+- `--`, `<` and `>` inside the JSON are escaped, so a comment can never end the HTML
+  comment early.
+- When there are no open comments, the block is removed completely.
+- When a round is finished, resolved threads are removed (they stay in the Git history).
+
+Fields: `id`, `type` (only for reference requests), `anchor`, `author`, `created`,
+`resolved`, `thread` (each with `author`, `created`, `text`) and `agree` (names of people who
+agreed).
+
+### Files from earlier Quartorium versions
+
+Earlier versions stored comments in a hidden `<div id="quartorium-comments">` with a JSON
+code block and marked the prose with `[text]{.comment ref="id"}` spans. Such files are
+migrated automatically the first time they're opened: the spans are removed from the text,
+and the comments become quote-anchored comments in the new block.
+
+## What is never changed
+
+- The YAML header, code, tables, equations, divs, comments and shortcodes.
+- Line endings (CRLF files stay CRLF) and the text before the first block.
+- Any other file in the repository, including the bibliography and `_quarto.yml`.
+- Blocks nobody edited, including their whitespace.

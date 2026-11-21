@@ -1,0 +1,82 @@
+---
+title: "Security and privacy"
+---
+
+Quartorium is meant to run on a server you control, for a research group and its
+collaborators. This page describes what it protects against and what it doesn't.
+
+## Links are keys
+
+Collaborators don't have accounts. Each person gets a personal link with a random token
+(18 random bytes, 144 bits), and the link is the only credential.
+
+- Anyone who has a link can do what its owner can: read and edit the paper, comment, and,
+  for a lead's link, accept suggestions, finish rounds and merge into main.
+- Removing a person in **People** disables their link at once.
+- Links survive into the next round. A finished round keeps a separate read-only link for
+  the lead.
+- Treat a lead's link like a password. Reviewers' links are less sensitive, because their
+  edits are only suggestions and every action is recorded in Git under their name.
+
+The admin pages (connecting repositories, starting rounds) are protected by
+`QUARTORIUM_ADMIN_PASSWORD` and a signed, HTTP-only session cookie. Without a password, the
+admin pages are disabled, but existing links keep working.
+
+## Use HTTPS
+
+Run Quartorium behind a reverse proxy with HTTPS (Caddy, nginx, Apache). Links and the admin
+cookie are sent with every request, so plain HTTP would expose them on the network. See
+[Getting started](getting-started.qmd#running-it-for-a-group).
+
+## Code execution
+
+Rendering runs `quarto render` on the paper, which **executes its code chunks** on the
+server, with the server's permissions.
+
+- **Collaborators can't add or change code.** Code chunks, raw blocks, HTML blocks and the
+  YAML header are locked. The browser never sends them back: the server restores them from
+  its own copy and rejects any save that adds, removes or reorders them. Typed text that
+  looks like code (```` ```{r} ````, `<script>`, `{=html}`) is escaped by Pandoc and
+  stays text. New citations are accepted only for known keys and are rebuilt by the server.
+- **Code only comes from Git.** What is executed is what the repository's branches contain,
+  that is, what someone with push access put there. Connect only repositories whose code you
+  are willing to run on the server.
+- Run the server as an unprivileged user (the example systemd unit does), ideally in a
+  container or VM if the repository's contributors are not all trusted.
+- Projects that use Quarto's `freeze` and commit `_freeze/` are rendered from the frozen
+  results, so code doesn't need to run at all.
+- Renders have a time limit (`QUARTORIUM_RENDER_TIMEOUT`, default 15 minutes).
+
+## What is stored where
+
+| Where | What |
+|---|---|
+| Your Git remote | the paper, comments, all decisions and history, with names (and e-mail addresses, if entered) as commit authors |
+| `QUARTORIUM_DATA/quartorium.sqlite` | links, names, e-mail addresses, drafts not yet committed, which suggestions were decided, activity events, **Git access tokens** |
+| `QUARTORIUM_DATA/repos/` | bare clones of the connected repositories |
+| `QUARTORIUM_DATA/renders/` | rendered outputs and images |
+| `QUARTORIUM_DATA/secret` | the key that signs the admin cookie (unless `QUARTORIUM_SECRET` is set) |
+
+Keep the data folder readable only by the user running Quartorium, and back it up. The Git
+access tokens are stored as entered, so use tokens that are limited to the paper's
+repository and to reading and writing code (on Forgejo, Gitea and GitLab: a repository or
+project access token).
+
+Access tokens are never written into the clones' Git configuration or into commits. They are
+passed to each Git command as an HTTP header and removed from error messages and from the
+admin page.
+
+## Personal data
+
+- **Names** appear in the commit history as authors. Collaborators should know that the
+  history is as permanent as the repository.
+- **E-mail addresses** are optional. If entered, they are used for invitations and as the Git
+  author e-mail. Without one, commits use a placeholder address.
+- Quartorium has **no analytics, no tracking, no external requests** from the browser. Fonts,
+  KaTeX and all scripts are served by Quartorium itself.
+- Rendered pages can contain what your paper's code produces, including external resources
+  if your code adds them.
+
+## Reporting a problem
+
+Please report security problems privately to the maintainer rather than in a public issue.

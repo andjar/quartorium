@@ -1,0 +1,119 @@
+---
+title: "Git and the paper trail"
+---
+
+Quartorium uses plain Git and nothing else, so it works with any Git host: Codeberg or a
+self-hosted Forgejo, a university GitLab, GitHub, or a bare repository on a server. It never
+uses a forge's API (pull requests, issues). Every step is an ordinary commit you can inspect
+with any Git tool.
+
+## Branches
+
+| Branch | Contains | Who writes it |
+|---|---|---|
+| your main branch | the paper as you keep it | you, and Quartorium only when the lead clicks **Merge into main** |
+| `quartorium/<paper>-<date>-<id>` | the **round**: the paper as it evolves during review | Quartorium, on behalf of each person |
+| `quartorium/<round>--<name>-<id>` | one **reviewer's** copy, with everything they wrote, accepted or not | Quartorium, on behalf of that reviewer |
+
+```{mermaid}
+gitGraph
+    commit id: "Paper draft"
+    branch "quartorium/paper-round"
+    checkout "quartorium/paper-round"
+    branch "…--anna"
+    checkout "…--anna"
+    commit id: "Anna's edits (in progress)"
+    commit id: "Anna finished her review"
+    checkout "quartorium/paper-round"
+    branch "…--bob"
+    checkout "…--bob"
+    commit id: "Bob's edits (in progress)"
+    checkout "quartorium/paper-round"
+    commit id: "Comment by Bob"
+    commit id: "Anna's change accepted"
+    commit id: "Bob's change declined"
+    commit id: "Round finished"
+    checkout main
+    merge "quartorium/paper-round" id: "Merge into main"
+```
+
+## What is committed, and when
+
+Commits follow moments people understand, not timers. Typing never creates a commit: drafts
+are saved on the server continuously and shown to others within seconds.
+
+| Moment | Branch | Commit | Git author |
+|---|---|---|---|
+| A reviewer leaves the page, or doesn't type for 10 minutes | reviewer's | `Anna's edits (in progress)` | the reviewer |
+| A reviewer clicks **Finish my review** | reviewer's | `Anna finished their review (3 suggested changes, 2 comments)` + their note | the reviewer |
+| The lead leaves the page, or doesn't type for 10 minutes, after editing directly | round | `Lena's edits` | the lead |
+| The lead **accepts** a suggestion | round | `Anna's change accepted: “…”` | **the person who wrote the text** |
+| The lead **declines** a suggestion | round | `Bob's change declined: “…”` (no change to the file) | the lead |
+| A reviewer withdraws their own suggestion | round | `Bob withdrew a change: “…”` | the reviewer |
+| Comment, reply, resolve, reference request | round | `Comment by Anna on “…”: …`, `Reply by Bob: …`, `Anna resolved a comment` | the person |
+| 👍 on a comment | round | bundled into the next commit | – |
+| **Update from main** | round | `Bring in the latest main` (a merge commit) | the lead |
+| **Finish round** | round | `Review round finished: …` with a summary | the lead |
+| **Merge into main** | main | `Merge review round “…” into main`, or a fast-forward | the lead |
+
+The committer of every commit is "Quartorium". New commits are pushed to the remote within
+about 30 seconds.
+
+When a reviewer's copy is brought up to date with the round, the next commit on their branch
+is a merge commit with the round as second parent, so `git log --graph` shows exactly which
+version of the round they were working on.
+
+### Why the person is the author
+
+Accepted text is committed with the co-author as Git author. `git blame paper.qmd` therefore
+shows, line by line, who wrote what, including sentences written by co-authors who have
+never used Git. Decisions (declining, finishing a round) are authored by the lead who made
+them.
+
+### Comments are in the file
+
+Open comment threads are stored in the `.qmd` itself, in an HTML comment at the end (see
+[How .qmd files are changed](qmd-files.qmd#comments)). They travel with the paper through
+branches and merges, and Quarto never renders them. When a round is finished, resolved
+threads are removed from the file, and the commits that added them keep them in the history.
+
+## When to merge into main
+
+The round branch is the reviewed version of the paper. Typical patterns:
+
+- **At the end of a round** (most common): *Finish round* with *merge into main* ticked.
+  Undecided suggestions stay on the reviewers' branches; everything accepted is in main.
+- **During a round**, to pick up accepted text in your own editor: **Round ▾ → Merge into
+  main**, then `git pull` locally. The round continues from the merged state.
+- **By hand or with a pull request**, for protected main branches or teams that review every
+  merge: merge the branch `quartorium/…` like any other branch.
+
+*Merge into main* never forces anything. It is a fast-forward when main hasn't moved, a
+merge commit when Git can combine both sides cleanly, and otherwise a clear message with the
+conflicting files. In that case, use *Update from main* first if the overlap is small, or
+merge with your own tools.
+
+## Updating a round from main
+
+If you keep writing in your own editor during a round, push to main and click **Round ▾ →
+Update from main**. Quartorium merges main into the round branch. Reviewers' copies follow
+the next time they open their link: their own edits are kept, and where they edited a
+paragraph that also changed on main, the main version wins and their version is kept as an
+*outdated* suggestion. Nothing is lost.
+
+## Rounds and links
+
+*Start next round* creates a new round branch, from main if the last round was merged into
+it, otherwise from the last round's branch. Each person's link moves to the new round, so
+co-authors never need a new link. The finished round keeps a private read-only link for the
+lead (**Round ▾ → Earlier rounds**).
+
+## Looking at it with Git
+
+```bash
+git fetch origin
+git log --graph --oneline origin/main 'origin/quartorium/*'   # the whole picture
+git log --format='%an: %s' origin/quartorium/paper-2026-11-21-ab12   # one round, by person
+git blame paper.qmd                                           # who wrote which line
+git diff main origin/quartorium/paper-2026-11-21-ab12 -- paper.qmd   # what the round changed
+```

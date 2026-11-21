@@ -1,0 +1,170 @@
+---
+title: "User guide"
+---
+
+There are two roles. **Reviewers** (co-authors) read, edit and comment. The **lead author**
+does the same, decides which suggestions go into the paper, and runs the rounds. A round can
+have more than one lead.
+
+## For reviewers
+
+### Open your link
+
+Your link opens the paper as it will look: headings, figures, tables, equations and
+references. There is nothing to install and no account. The link is personal; please don't
+forward it.
+
+The same link keeps working in later rounds and always opens the current version.
+
+### Edit the text
+
+Click anywhere in the text and type, as in Word. Your edits are saved within a second or two
+(*All changes saved* at the top) and marked in the text: new words are highlighted in green,
+removed words are struck through.
+
+::: {.screenshot}
+![A reviewer's own edits: an inserted word and a new sentence, marked in the text.](images/reviewer-inline.png)
+:::
+
+Your edits are *suggestions*. Everyone in the round can see them under **Changes**, and the
+lead author accepts or rejects them. You can see everyone else's suggestions too, so if
+someone already rewrote a paragraph you can build on their version or comment on it instead
+of rewriting it again.
+
+Some parts of the paper are *locked*: code and its output (figures, tables), equations, the
+title block, and a few special blocks. Hover over one to see why; **Show source** shows what
+is behind it. If something there needs changing, leave a comment.
+
+### Comment
+
+Select some text and click **Comment** (in the toolbar or the small menu above the
+selection). Everyone sees all comments. You can reply, and **👍 Agree** with someone else's
+comment instead of writing the same thing again. The author of a comment, or the lead, can
+resolve it.
+
+### Cite
+
+Type `@` at the start of a word, or click **📚 Cite**. Search by author, title or year, or
+pick a figure, table, equation or section of the paper. You can add a page or chapter, and
+choose *Name in the sentence* for "Smith (2020) showed…".
+
+::: {.screenshot}
+![The citation picker, with a locator.](images/cite-picker.png)
+:::
+
+If the reference isn't in the paper's bibliography, click **Can't find it?** and paste a DOI,
+a link or the full reference. This leaves a note at that spot for the lead author, who adds
+it to the bibliography; after that, anyone can cite it.
+
+### Finish your review
+
+When you're done, click **Finish my review** at the top. You can add a note for the lead
+author, like the e-mail you would send with a Word file. Everything is already saved; this
+tells the lead you are done and records your review in the paper's history. You can still
+make changes afterwards.
+
+### When you come back
+
+If the paper changed since your last visit, a yellow banner tells you how many paragraphs
+changed and by whom. The paragraphs are marked in the margin, and **Changes → Since your
+last visit** shows each change word by word. Click one to see it in place.
+
+::: {.screenshot}
+![Opening the paper in a new round: what changed since the last visit, and who changed it.](images/since-last-visit.png)
+:::
+
+## For lead authors
+
+### Invite people
+
+In **People**, add each co-author's name (and optionally an e-mail address). **Invite by
+e-mail** opens your own mail program with a ready-made message, or the server sends it if mail
+is configured. You can also copy the link and send it any way you like.
+
+The People tab shows where everyone is: *Not opened yet*, *Reviewing*, or *Finished*, with
+their note, and how many suggestions and comments each person made.
+
+::: {.screenshot}
+![People and their status, with a reviewer's note.](images/people.png)
+:::
+
+### Go through the suggestions
+
+Your own edits go straight into the paper. Co-authors' edits arrive as suggestions, one per
+paragraph. Click **Review** at the top to go through every suggestion and comment in
+document order. Each suggestion is shown in place: removed words struck through, new words in
+green.
+
+| Key | In the review queue |
+|---|---|
+| <span class="kbd">A</span> | Accept the suggestion |
+| <span class="kbd">R</span> | Reject the suggestion (or resolve the comment) |
+| <span class="kbd">N</span> / <span class="kbd">→</span> | Next |
+| <span class="kbd">P</span> / <span class="kbd">←</span> | Previous |
+| <span class="kbd">1</span>–<span class="kbd">9</span> | Switch between competing versions of a paragraph |
+| <span class="kbd">Esc</span> | Close the queue |
+
+If two people rewrote the same paragraph, both versions are shown together and you pick one.
+Once you accept one, the other is marked *outdated*: it can no longer be applied
+automatically, so nothing is overwritten by accident. You can still copy from it, then
+dismiss it.
+
+For many small edits, **Changes → Accept all that don't conflict** (or *All from Anna*)
+accepts everything that doesn't compete with another version.
+
+Accepted text is committed with the co-author as its Git author, so `git blame` credits the
+person who wrote each sentence.
+
+### Keep working in your own editor
+
+You can keep writing in RStudio or VS Code during a round. Push as usual, then choose
+**Round ▾ → Update from main** to bring your new commits into the round. If you changed the
+same lines that the round changed, Quartorium explains the conflict instead of guessing.
+
+### Finish the round
+
+Choose **Round ▾ → Finish round…**. The dialog shows who hasn't finished and how many
+suggestions are undecided.
+
+::: {.screenshot}
+![Finishing a round.](images/finish-round.png)
+:::
+
+Finishing a round:
+
+- makes the paper read-only for reviewers;
+- removes resolved comment threads from the file (they stay in the history) and keeps open
+  ones for the next round;
+- leaves undecided suggestions on the reviewers' branches, out of the paper;
+- optionally merges the result into your main branch.
+
+### Merge into main
+
+**Round ▾ → Merge into main** merges the round's version of the paper into your main branch
+and pushes it. This happens only when Git can merge without conflicts. If main changed the
+same lines, or your Git host protects main, Quartorium tells you which branch to merge with a
+pull request instead. You can merge at the end of a round or at any point during it.
+
+### Start the next round
+
+**Round ▾ → Start next round…** starts a new round with the same people and **the same
+links**. It starts from main if the finished round was merged, otherwise from the finished
+round. Everyone sees what changed since their last visit. Earlier rounds stay available
+read-only under **Round ▾ → Earlier rounds**.
+
+### The history
+
+**History** lists every saved version: comments, accepted and declined suggestions, finished
+reviews and rounds, with who did what. Click an entry to see what it changed, word by word.
+
+::: {.screenshot}
+![History: each entry opens its changes.](images/history.png)
+:::
+
+## Limits
+
+- There are no live cursors. Others' suggestions and comments appear within about ten seconds.
+- Locked blocks (code, tables, display equations, callouts and other `:::` blocks,
+  footnote definitions) can't be edited in the browser; comment on them instead.
+- Interactive widgets (htmlwidgets, Observable) are shown as their static output.
+- One `.qmd` file per round. Sections pulled in with `{{{< include >}}}` are shown as locked blocks.

@@ -1,24 +1,18 @@
 {
-  "name": "quartorium-monorepo",
+  "name": "quartorium",
   "private": true,
-  "version": "1.0.0",
-  "description": "Root for the Quartorium project",
+  "version": "2.0.0",
+  "description": "Review rounds for Quarto documents: send co-authors a link, keep the paper trail in Git",
   "workspaces": [
     "backend",
     "frontend"
   ],
   "scripts": {
-    "start:backend": "npm run start --workspace=backend",
-    "start:frontend": "npm run dev --workspace=frontend",
-    "install": "npm install --workspaces --if-present"
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=frontend",
+    "start": "npm run start --workspace=backend",
+    "test": "npm test --workspace=backend"
   },
-  "keywords": [],
-  "author": "",
-  "license": "GPL-3.0-only",
-  "dependencies": {
-    "@tiptap/extension-link": "^2.14.0"
-  },
-  "devDependencies": {
-    "axios": "^1.10.0"
-  }
+  "license": "GPL-3.0-only"
 }

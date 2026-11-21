@@ -38,21 +38,13 @@ Thumbs.db
 .env.production.local
 
 # ===================================================================
-# Backend Specific (Node.js / SQLite)
+# Backend: everything Quartorium stores at runtime (database, bare
+# clones, render cache, session secret) lives in the data directory.
 # ===================================================================
-
-# The SQLite database file
-# You don't want to version control the database itself, just the
-# schema/migration files that create it.
-backend/src/db/quartorium.db
-backend/src/db/quartorium.db-journal
-*.db
-
-# Temporary directories for cloned git repos (we'll create this later)
-backend/repos/
-
-# Cache for rendered Quarto chunks (we'll create this later)
-backend/cache/
+backend/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 
 # ===================================================================
 # Frontend Specific (Vite / React)
@@ -87,3 +79,8 @@ frontend/.vite
 
 coverage
 .nyc_output
+# ===================================================================
+# Documentation website (quarto render docs)
+# ===================================================================
+docs/_site/
+docs/.quarto/

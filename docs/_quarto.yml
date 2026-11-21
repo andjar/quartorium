@@ -1,0 +1,52 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "Quartorium"
+  description: "Review rounds for Quarto papers: send co-authors a link, keep the paper trail in Git."
+  repo-url: https://github.com/andjar/quartorium
+  repo-actions: [edit, issue]
+  page-navigation: true
+  navbar:
+    left:
+      - href: index.qmd
+        text: Overview
+      - href: getting-started.qmd
+        text: Getting started
+      - href: guide.qmd
+        text: User guide
+      - text: How it works
+        menu:
+          - href: git.qmd
+            text: Git and the paper trail
+          - href: qmd-files.qmd
+            text: How .qmd files are changed
+          - href: architecture.qmd
+            text: Architecture
+          - href: security.qmd
+            text: Security and privacy
+    right:
+      - icon: github
+        href: https://github.com/andjar/quartorium
+  sidebar:
+    - title: "How it works"
+      contents:
+        - git.qmd
+        - qmd-files.qmd
+        - architecture.qmd
+        - security.qmd
+  page-footer:
+    center: "Quartorium · GPL-3.0 · built with Quarto"
+
+format:
+  html:
+    theme:
+      light: [cosmo, styles.scss]
+    toc: true
+    toc-depth: 3
+    smooth-scroll: true
+    link-external-newwindow: true
+    code-copy: true
+    mermaid:
+      theme: neutral

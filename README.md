@@ -1,90 +1,53 @@
 # Quartorium ✒️
 
-**A collaborative WYSIWYG editor for Quarto, bridging the gap between reproducible research and seamless teamwork.**
+**Review rounds for Quarto papers. Send co-authors a link; keep the paper trail in Git.**
 
-Quartorium allows technical authors to share their Quarto (`.qmd`) documents with non-technical collaborators through a simple, clean, Word-like interface. Collaborators can edit prose and add comments without ever seeing code, while authors can review these changes and merge them back into a version-controlled Git workflow.
+Quartorium lets the author of a Quarto (`.qmd`) paper share it with co-authors who don't use
+Git, R or Python. They open a personal link and see the paper with its real figures, tables,
+equations and references. They edit the text, comment and cite, all in the browser, in
+parallel, and they see each other's suggestions. The lead author goes through the
+suggestions like tracked changes, finishes the round and merges it into main. Every edit,
+comment and decision is an ordinary Git commit, with the person who made it as the author,
+on any Git host (Codeberg, Forgejo, GitLab, GitHub, or a plain server).
 
-See demo on youtube:
+- **Nothing to install for co-authors**: a link, no account.
+- **Parallel, not sequential**: everyone edits at once, and everyone sees everyone's
+  suggestions and comments, so nobody makes the same change twice.
+- **Your file stays yours**: untouched text keeps its exact bytes, code and YAML are locked,
+  and a one-word edit is a one-line Git diff. Comments live invisibly at the end of the `.qmd`.
+- **Plain Git, no forge API**: rounds and reviewers are branches; `git blame` shows who wrote
+  each sentence.
 
-[![Demo video](https://img.youtube.com/vi/yBLlVgVVQiE/0.jpg)](https://www.youtube.com/watch?v=yBLlVgVVQiE)
+## Documentation
 
+The full documentation is a Quarto website in [`docs/`](docs/). Preview it with
+`quarto preview docs`.
 
-## ✨ Core Features
+- [Getting started](docs/getting-started.qmd): install, connect a repository, configuration
+- [User guide](docs/guide.qmd): for reviewers and lead authors
+- [Git and the paper trail](docs/git.qmd): branches, what is committed when, merging into main
+- [How .qmd files are changed](docs/qmd-files.qmd): blocks, Pandoc, citations, the comment block
+- [Architecture](docs/architecture.qmd): components, data model, API
+- [Security and privacy](docs/security.qmd)
 
-*   **Seamless Collaboration:** Share a simple link with collaborators. They get a clean WYSIWYG editor—no setup required.
-*   **Code-Free Editing:** Quarto code chunks are hidden from collaborators. They see the plots and tables, but can only edit the surrounding prose.
-*   **Git-Powered Version Control:** Every change is automatically committed to a separate Git branch, creating a perfect audit trail.
-*   **Visual Diff & Merge:** Authors can visually review all suggestions, then accept or reject changes with the click of a button.
-*   **Inline Commenting:** Highlight text to start a discussion, right in the margin.
+## Quick start
 
-## 🚀 Tech Stack
+Requires Node.js ≥ 22.13, Git ≥ 2.38 and [Quarto](https://quarto.org/docs/get-started/)
+(plus whatever your papers need to run, unless you use Quarto's `freeze`).
 
-*   **Frontend:** React (Vite), TipTap (for the editor), Tailwind CSS
-*   **Backend:** Node.js, Express.js
-*   **Database:** SQLite
-*   **Core Engine:** Git, Quarto CLI
+```bash
+git clone https://github.com/andjar/quartorium.git
+cd quartorium
+npm install
+npm run build
+QUARTORIUM_ADMIN_PASSWORD='choose-one' npm start
+```
 
-## 🏁 Getting Started
+Open <http://localhost:8000>, log in, connect a repository and start a review round.
 
-Follow these instructions to get Quartorium running on your local machine for development and testing.
+For development, run `npm run dev:backend` and `npm run dev:frontend` in two terminals and
+open <http://localhost:5173>. Run the tests with `npm test`.
 
-### Prerequisites
+## License
 
-You must have the following tools installed directly on your system:
-*   [Node.js](https://nodejs.org/) (v18 or later)
-*   [Git](https://git-scm.com/)
-*   [Quarto CLI](https://quarto.org/docs/get-started/)
-
-### Installation & Setup
-
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/andjar/quartorium.git
-    cd quartorium
-    ```
-
-2.  **Install all dependencies:**
-    This command will run `npm install` in the root, `backend`, and `frontend` directories.
-    ```bash
-    npm install
-    ```
-
-3.  **Set up environment variables:**
-    Copy the example environment file. The default settings with SQLite should work out of the box for local development. You will still need to add GitHub API keys to enable login.
-    ```bash
-    cp .env.example .env
-    ```
-    To get your GitHub keys, create a new GitHub OAuth App in your developer settings.
-
-4.  **Run the application:**
-    You will need two separate terminal windows or tabs.
-
-    *   **In Terminal 1 (for the Backend):**
-        ```bash
-        npm run start:backend
-        ```
-        This will start the backend API server, typically on `http://localhost:8000`.
-
-    *   **In Terminal 2 (for the Frontend):**
-        ```bash
-        npm run start:frontend
-        ```
-        This will start the React development server, typically on `http://localhost:3000`.
-
-5.  **Open the app:**
-    Navigate to `http://localhost:3000` in your web browser.
-
-### Scripts
-
-The root `package.json` contains helper scripts to manage the project:
-*   `npm install`: Installs dependencies for all workspaces.
-*   `npm run start:backend`: Starts the backend server in development mode.
-*   `npm run start:frontend`: Starts the frontend development server.
-
-### ⚠️ A Note on Security
-
-This development setup runs the `quarto render` command directly on your machine. **Do not use this application with untrusted `.qmd` files from the internet**, as they could contain malicious code. For personal use and with trusted collaborators, this setup is fine. A public-facing production deployment would require sandboxing this process (e.g., using Docker).
-
-## 📄 License
-
-This project is licensed under the GPL3 License - see the `LICENSE` file for details.
+GPL-3.0-only (as declared in `package.json`).
