@@ -1,0 +1,84 @@
+---
+title: "Effects of Fuel Efficiency on Everything"
+subtitle: A Quartorium test paper
+author:
+  - name: Anna Example
+    affiliations: University of Somewhere
+  - Bob Builder
+date: 2026-01-15
+bibliography: references.bib
+format:
+  html: default
+  pdf: default
+---
+
+## Introduction {#sec-intro}
+
+Cars are *everywhere*, and **fuel efficiency** matters (a lot).
+This paragraph uses one sentence per line,
+and wraps lines by hand -- like many authors do.
+See @fig-mpg for the main result and [@smith2020, p. 3; @doe2019] for background.
+Inline code `r nrow(mtcars)` gives the sample size, and $E = mc^2$ is famous.
+
+A second paragraph with a footnote[^long] and an inline note^[Inline notes are handy.].
+It also has a shortcode {{< meta title >}} and a [reference link][quarto].
+Some ~~deleted~~ text, H~2~O, x^2^, [small caps]{.smallcaps}, and [a span]{.mark data-x="1"}.
+Escaped \*stars\* and a URL <https://quarto.org>.
+
+```{python}
+#| label: fig-mpg
+#| fig-cap: "Fuel efficiency by weight"
+import matplotlib.pyplot as plt
+plt.plot([1, 2, 3], [3, 2, 1])
+plt.show()
+```
+
+- First item with *emphasis*
+- Second item
+    - Nested item
+
+1. Ordered one
+
+2. Ordered two (loose)
+
+> A block quote
+> spanning two lines.
+
+| Model | MPG |
+|-------|-----|
+| A     | 21  |
+| B     | 30  |
+
+: Two cars {#tbl-cars}
+
+$$
+E = mc^2
+$$ {#eq-energy}
+
+::: {.callout-note}
+This callout is kept exactly as written.
+:::
+
+<!-- A private note for the author -->
+
+{{< pagebreak >}}
+
+```r
+# a plain (non-executed) code block
+x <- 1
+```
+
+Results are summarised in @tbl-cars and @eq-energy.
+
+[^long]: This footnote is defined at the end.
+
+    It even has a second paragraph.
+
+[quarto]: https://quarto.org
+
+***
+
+# References {.unnumbered}
+
+::: {#refs}
+:::

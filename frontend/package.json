@@ -1,7 +1,7 @@
 {
-  "name": "frontend",
+  "name": "quartorium-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,20 +12,20 @@
   "dependencies": {
     "@tiptap/core": "^2.14.0",
     "@tiptap/extension-link": "^2.14.0",
+    "@tiptap/extension-subscript": "^2.14.0",
+    "@tiptap/extension-superscript": "^2.14.0",
+    "@tiptap/extension-underline": "^2.14.0",
+    "@tiptap/pm": "^2.14.0",
     "@tiptap/react": "^2.14.0",
     "@tiptap/starter-kit": "^2.14.0",
+    "diff": "^8.0.2",
     "katex": "^0.16.22",
-    "lodash.debounce": "^4.0.8",
     "react": "^19.1.0",
-    "react-diff-viewer": "^3.1.1",
     "react-dom": "^19.1.0",
-    "react-katex": "^3.1.0",
     "react-router-dom": "^7.6.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
-    "@types/react": "^19.1.2",
-    "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",
     "eslint": "^9.25.0",
     "eslint-plugin-react-hooks": "^5.2.0",
