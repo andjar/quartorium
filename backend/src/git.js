@@ -182,24 +182,45 @@ class Repo {
     return commit;
   }
 
+  async isAncestor(a, b) {
+    return (await this.git(['merge-base', '--is-ancestor', a, b], { allowCodes: [0, 1] })).code === 0;
+  }
+
   /**
-   * Merge `theirs` into branch without a working directory (git >= 2.38).
-   * Returns { clean: true, commit } or { clean: false, conflicts: [paths] }.
+   * Merge two commits without a working directory (git >= 2.38) and without
+   * moving any branch. Returns { clean, commit } or { clean: false, conflicts }.
+   * When one side already contains the other, no merge commit is made.
    */
-  async mergeInto(branch, theirs, { author, message }) {
-    const ref = `refs/heads/${branch}`;
-    const ours = await this.resolve(ref);
-    const theirsCommit = await this.resolve(theirs);
-    const base = (await this.git(['merge-base', ours, theirsCommit], { allowCodes: [0, 1] })).stdout.trim();
-    if (base === theirsCommit) return { clean: true, commit: ours, upToDate: true };
-    const r = await this.git(['merge-tree', '--write-tree', '--name-only', ours, theirsCommit], { allowCodes: [0, 1] });
+  async mergeCommits(ours, theirs, { author, message }) {
+    if (await this.isAncestor(theirs, ours)) return { clean: true, commit: ours, upToDate: true };
+    if (await this.isAncestor(ours, theirs)) return { clean: true, commit: theirs, fastForward: true };
+    const r = await this.git(['merge-tree', '--write-tree', '--name-only', ours, theirs], { allowCodes: [0, 1] });
     const lines = r.stdout.split('\n');
     if (r.code === 1) {
       const conflicts = lines.slice(1).filter((l) => l && !l.startsWith('Auto-merging') && !l.startsWith('CONFLICT'));
       return { clean: false, conflicts: [...new Set(conflicts)] };
     }
-    const commit = await this.commitTree({ tree: lines[0].trim(), parents: [ours, theirsCommit], author, message, ref, oldValue: ours });
+    const commit = await this.commitTree({ tree: lines[0].trim(), parents: [ours, theirs], author, message });
     return { clean: true, commit };
+  }
+
+  /** Merge `theirs` into a local branch. Fast-forwards when possible. */
+  async mergeInto(branch, theirs, opts) {
+    const ref = `refs/heads/${branch}`;
+    const ours = await this.resolve(ref);
+    const result = await this.mergeCommits(ours, await this.resolve(theirs), opts);
+    if (result.clean && result.commit !== ours) await this.git(['update-ref', ref, result.commit, ours]);
+    return result;
+  }
+
+  /** Push one commit to a branch on the remote (e.g. a merge into main). */
+  async pushCommit(commit, branch) {
+    if (!config.push) throw new Error('Pushing is turned off on this server (QUARTORIUM_PUSH=0).');
+    await this.git([...this.authArgs(), 'push', '--quiet', '--porcelain', 'origin', `${commit}:refs/heads/${branch}`]);
+  }
+
+  async setBranch(branch, commit, oldValue) {
+    await this.git(['update-ref', `refs/heads/${branch}`, commit, oldValue]);
   }
 
   /** Extract the tree of ref into dest (for rendering). */

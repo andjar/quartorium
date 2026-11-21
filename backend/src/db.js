@@ -60,13 +60,42 @@ CREATE TABLE IF NOT EXISTS members (
 );
 `;
 
-const JSON_COLUMNS = ['resolved', 'orphans', 'notices'];
+const CREATE_EVENTS = `
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY,
+  round_id INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+  member_id INTEGER,
+  type TEXT NOT NULL,
+  data TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+`;
+
+// Columns added after the first release; added to existing databases on start.
+const ADDED_COLUMNS = {
+  members: {
+    status: "TEXT NOT NULL DEFAULT 'invited'", // invited | working | done
+    done_at: 'TEXT', done_note: 'TEXT', invited_at: 'TEXT',
+    seen_prose: 'TEXT', seen_at: 'TEXT', // what the round looked like at the last visit
+  },
+  rounds: {
+    finished_at: 'TEXT', merged_at: 'TEXT', merged_commit: 'TEXT',
+    previous_round_id: 'INTEGER', next_round_id: 'INTEGER',
+  },
+};
+
+const JSON_COLUMNS = ['resolved', 'orphans', 'notices', 'data'];
 
 function open(dataDir) {
   fs.mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(path.join(dataDir, 'quartorium.sqlite'));
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  db.exec(CREATE_EVENTS);
+  for (const [table, cols] of Object.entries(ADDED_COLUMNS)) {
+    const have = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
+    for (const [col, type] of Object.entries(cols)) if (!have.has(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+  }
 
   const parse = (row) => {
     if (!row) return row;

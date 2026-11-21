@@ -10,6 +10,8 @@ const { tmpdir, makeRemote, authorPush, sh } = require('./helpers');
 config.adminPassword = 'secret-pw';
 config.commitIdleSeconds = 0;
 config.quarto = 'quartorium-test-no-quarto'; // rendering is covered in render.test.js
+config.smtpUrl = 'json'; // e-mails are collected in mail.outbox
+const mail = require('../src/mail');
 
 const PAPER = `---
 title: Flow paper
@@ -81,7 +83,7 @@ test('review round flow', async (t) => {
   const lead = await anon.get(L);
   assert.equal(lead.data.me.role, 'lead');
   assert.equal(lead.data.round.title, 'Flow paper');
-  const anna = (await anon.post(`${L}/people`, { name: 'Anna' })).data;
+  const anna = (await anon.post(`${L}/people`, { name: 'Anna', email: 'anna@example.org' })).data;
   const bob = (await anon.post(`${L}/people`, { name: 'Bob' })).data;
   const A = `/r/${anna.token}`, B = `/r/${bob.token}`;
   assert.equal((await anon.post(`${A}/people`, { name: 'Eve' })).status, 403);
@@ -187,7 +189,7 @@ test('review round flow', async (t) => {
   assert.ok(file.includes('First paragraph stays as it is.'));
   assert.match(file, /<!-- quartorium\n[\s\S]*Should we cut this\?[\s\S]*-->$/);
   const authors = git('log', '--format=%an: %s', roundBranch).split('\n');
-  for (const expected of [/^Anna: Reference request by Anna/, /^Anna: Anna withdrew a change/, /^Anna: Accept change by Anna/, /^Bob: Accept change by Bob/, /^Lena Lead: Reject change by Bob/, /^Anna: Comment by Anna/, /^Bob: Bob agrees/, /^Lena Lead: Edits by Lena Lead/]) {
+  for (const expected of [/^Anna: Reference request by Anna/, /^Anna: Anna withdrew a change/, /^Anna: Anna's change accepted/, /^Bob: Bob's change accepted/, /^Lena Lead: Bob's change declined/, /^Anna: Comment by Anna/, /^Lena Lead: Lena Lead's edits/]) {
     assert.ok(authors.some((l) => expected.test(l)), `missing ${expected} in\n${authors.join('\n')}`);
   }
   const branches = git('for-each-ref', '--format=%(refname:short)', 'refs/heads/quartorium');
@@ -207,4 +209,93 @@ test('review round flow', async (t) => {
   assert.ok(hist.length >= 8);
 
   assert.equal((await anon.get('/r/not-a-token')).status, 404);
+
+  // ================================================================ lifecycle
+  // --- reviewers see their own edits inline, and what changed since their last visit
+  const a4 = (await anon.get(A)).data;
+  assert.ok(a4.sinceLastVisit.changes.some((c) => c.by === 'Bob (accepted by Lena Lead)'), JSON.stringify(a4.sinceLastVisit));
+  assert.ok(a4.sinceLastVisit.changes.some((c) => c.by === 'Lena Lead'), 'lead edits are attributed');
+  assert.ok(!a4.sinceLastVisit.changes.some((c) => c.by.startsWith('Anna')), 'your own accepted change is not news to you');
+  assert.equal((await anon.get(A)).data.sinceLastVisit.changes.length, 0, 'seen now');
+  const tracked = await anon.put(`${A}/doc`, { doc: editParagraph(a4.doc, 'First paragraph', 'First paragraph, Anna again.'), rev: a4.rev });
+  assert.equal(tracked.status, 200);
+  const a5 = (await anon.get(A)).data;
+  assert.equal(a5.track.length, 1);
+  assert.equal(a5.track[0].old[0].text, 'First paragraph, updated on main.');
+  assert.ok(Array.isArray(a5.track[0].old[0].nodes), 'nodes for inline marking');
+
+  // --- accept all from one person (nothing competing)
+  const b3 = (await anon.get(B)).data;
+  await anon.put(`${B}/doc`, { doc: editParagraph(b3.doc, 'Closing', 'Closing paragraph, by Bob.'), rev: b3.rev });
+  const before = (await anon.get(`${L}/activity`)).data.changes;
+  assert.equal(before.length, 2);
+  assert.deepEqual(before.map((c) => c.competing), [[], []]);
+  assert.deepEqual((await anon.post(`${L}/changes/accept-all`, { authorId: anna.id })).data, { accepted: 1 });
+  assert.deepEqual((await anon.get(`${L}/activity`)).data.changes.map((c) => c.author), ['Bob']);
+
+  // --- Bob finishes his review: a commit with his note, the lead is told
+  assert.equal((await anon.post(`${L}/finish`, {})).status, 400, 'leads finish rounds, not reviews');
+  const fin = await anon.post(`${B}/finish`, { note: 'Mostly small things; see the closing paragraph.' });
+  assert.deepEqual(fin.data, { status: 'done' });
+  const people = (await anon.get(`${L}/activity`)).data.people;
+  assert.equal(people.find((p) => p.name === 'Bob').status, 'done');
+  assert.equal(people.find((p) => p.name === 'Bob').doneNote, 'Mostly small things; see the closing paragraph.');
+  assert.equal(people.find((p) => p.name === 'Anna').status, 'working');
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(mail.outbox.some((m) => m.to[0].address === 'lena@example.org' && /Bob finished reviewing/.test(m.subject)), JSON.stringify(mail.outbox.map((m) => m.subject)));
+  await app.flush({ force: true });
+  assert.match(git('log', '-1', '--format=%an|%B', `${roundBranch}--bob-3`), /^Bob\|Bob finished their review \(1 suggested change, 0 comments\)\n\nMostly small things/);
+
+  // --- leaving the page commits work in progress right away
+  const a6 = (await anon.get(A)).data;
+  await anon.put(`${A}/doc`, { doc: editParagraph(a6.doc, 'First paragraph', 'First paragraph, Anna once more.'), rev: a6.rev });
+  await anon.post(`${A}/pause`);
+  assert.equal(sh(remote.root, '--git-dir', app.repoFor(app.project(proj.data.id)).dir, 'log', '-1', '--format=%s', `${roundBranch}--anna-2`), "Anna's edits (in progress)");
+
+  // --- history entries show what changed
+  const commits = (await anon.get(`${L}/history`)).data;
+  const acceptCommit = commits.find((c) => /Anna's change accepted/.test(c.subject));
+  const diff = (await anon.get(`${L}/history/${acceptCommit.hash}`)).data;
+  assert.equal(diff.changes.length, 1);
+  assert.equal(diff.changes[0].new[0].text, 'First paragraph, Anna again.');
+
+  // --- the lead finishes the round: read-only, resolved threads leave the file
+  assert.equal((await anon.post(`${A}/round/finish`)).status, 403);
+  assert.equal((await anon.post(`${L}/round/finish`, {})).status, 200);
+  const af = (await anon.get(A)).data;
+  assert.equal(af.round.status, 'finished');
+  assert.equal((await anon.put(`${A}/doc`, { doc: af.doc, rev: af.rev })).status, 409);
+  assert.equal((await anon.post(`${A}/comments`, { anchor: {}, text: 'late' })).status, 409);
+  await app.flush({ force: true });
+  const finishedText = git('show', `${roundBranch}:paper.qmd`);
+  assert.ok(!finishedText.includes('Should we cut this?'), 'resolved thread removed from the file');
+  assert.ok(finishedText.includes('Please add doi:10.1000/xyz'), 'open reference request kept');
+  assert.match(git('log', '-1', '--format=%B', roundBranch), /^Review round finished: Flow paper/);
+
+  // --- merge into main (the round already contains main, so this fast-forwards)
+  const merged = await anon.post(`${L}/round/merge`);
+  assert.equal(merged.status, 200, JSON.stringify(merged.data));
+  assert.equal(git('rev-parse', 'main'), git('rev-parse', roundBranch));
+  assert.ok(git('show', 'main:paper.qmd').includes('Second paragraph, improved by Anna.'));
+
+  // --- next round: same links, new branch, people told what changed
+  assert.equal((await anon.post(`${A}/round/next`)).status, 403);
+  const next = await anon.post(`${L}/round/next`, {});
+  assert.equal(next.status, 200, JSON.stringify(next.data));
+  assert.equal(next.data.from, 'main');
+  assert.equal(next.data.token, created.data.leadToken, 'the lead keeps the same link');
+  const ln = (await anon.get(L)).data;
+  assert.equal(ln.round.id, next.data.roundId);
+  assert.equal(ln.round.previousRoundId, l2.round.id);
+  assert.equal(ln.round.status, 'open');
+  const an = (await anon.get(A)).data;
+  assert.equal(an.round.id, next.data.roundId, "Anna's old link opens the new round");
+  assert.deepEqual(an.notices.map((n) => n.type), ['new-round']);
+  assert.equal(an.changes.length, 0);
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(mail.outbox.some((m) => m.to[0].address === 'anna@example.org' && /New version to review/.test(m.subject)));
+  const prev = (await anon.get(`${L}/rounds`)).data;
+  assert.equal(prev.length, 1);
+  const old = (await anon.get(`/r/${prev[0].token}`)).data;
+  assert.equal(old.round.status, 'finished');
 });

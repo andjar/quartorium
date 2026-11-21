@@ -224,17 +224,23 @@ const LOCKED_LABELS = {
   html: 'HTML block', other: 'Block',
 };
 
-/** Plain-text view of blocks from splitQmd: [{ key, kind, locked, text }]. */
-async function plainTexts(blocks) {
+/**
+ * How blocks from splitQmd look in the editor: [{ key, kind, locked, text, nodes }].
+ * `nodes` (ProseMirror JSON) lets the browser show differences with chips as
+ * readable labels; `text` is used for commit messages.
+ */
+async function blockViews(blocks) {
   const prose = blocks.filter((b) => !b.locked);
   const asts = await parseProse(prose.map((b) => protect(b.source)));
-  const byKey = new Map(prose.map((b, i) => [b.key, blocksToPlain(asts[i])]));
-  return blocks.map((b) => ({
-    key: b.key,
-    kind: b.kind,
-    locked: b.locked,
-    text: b.locked ? `[${LOCKED_LABELS[b.kind] || 'Block'}${b.label ? ': ' + b.label : ''}]` : byKey.get(b.key),
-  }));
+  const byKey = new Map();
+  prose.forEach((b, i) => {
+    let nodes = null;
+    try { nodes = blocksToPm(asts[i]); } catch { nodes = null; }
+    byKey.set(b.key, { text: blocksToPlain(asts[i]), nodes });
+  });
+  return blocks.map((b) => (b.locked
+    ? { key: b.key, kind: b.kind, locked: true, text: `[${LOCKED_LABELS[b.kind] || 'Block'}${b.label ? ': ' + b.label : ''}]`, nodes: null }
+    : { key: b.key, kind: b.kind, locked: false, ...byKey.get(b.key) }));
 }
 
-module.exports = { parseQmd, serializeQmd, withMeta, plainTexts, LockedBlocksChanged, yamlSummary };
+module.exports = { parseQmd, serializeQmd, withMeta, blockViews, LockedBlocksChanged, yamlSummary };

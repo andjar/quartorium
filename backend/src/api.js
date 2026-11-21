@@ -2,6 +2,9 @@
 const express = require('express');
 const { redactUrl } = require('./git');
 
+/** Address of this server as the browser sees it, for links in e-mails. */
+const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
+
 /** All HTTP routes. `app` is the Quartorium service, `auth` the admin auth helper. */
 function routes(app, auth) {
   const r = express.Router();
@@ -36,6 +39,7 @@ function routes(app, auth) {
   link.post('/comments/:cid/replies', async (req, res) => res.json(await app.reply(req.ctx, req.params.cid, req.body?.text)));
   link.post('/comments/:cid/resolve', async (req, res) => res.json(await app.resolve(req.ctx, req.params.cid, req.body?.resolved !== false)));
   link.post('/comments/:cid/agree', async (req, res) => res.json(await app.agree(req.ctx, req.params.cid)));
+  link.post('/changes/accept-all', async (req, res) => res.json(await app.acceptAll(req.ctx, { authorId: req.body?.authorId })));
   link.post('/changes/:id/accept', async (req, res) => { await app.accept(req.ctx, req.params.id); res.json({ ok: true }); });
   link.post('/changes/:id/reject', async (req, res) => { await app.reject(req.ctx, req.params.id); res.json({ ok: true }); });
   link.post('/people', async (req, res) => {
@@ -48,9 +52,18 @@ function routes(app, auth) {
     await app.removeMember(req.ctx.round, Number(req.params.id));
     res.json({ ok: true });
   });
+  link.post('/people/:id/invite', async (req, res) => res.json(await app.invite(req.ctx, Number(req.params.id), baseUrl(req))));
+  link.post('/pause', express.text({ type: '*/*' }), async (req, res) => res.json(await app.pause(req.ctx)));
+  link.post('/finish', async (req, res) => res.json(await app.finishReview(req.ctx, { note: req.body?.note }, baseUrl(req))));
+  link.post('/round/finish', async (req, res) => res.json(await app.finishRound(req.ctx, { removeResolved: req.body?.removeResolved !== false })));
+  link.post('/round/reopen', async (req, res) => res.json(await app.reopenRound(req.ctx)));
+  link.post('/round/merge', async (req, res) => res.json(await app.mergeIntoMain(req.ctx)));
+  link.post('/round/next', async (req, res) => res.json(await app.nextRound(req.ctx, req.body || {}, baseUrl(req))));
+  link.get('/rounds', (req, res) => res.json(app.previousRounds(req.ctx)));
   link.post('/sync', async (req, res) => res.json(await app.sync(req.ctx)));
   link.post('/render', async (req, res) => res.json(await app.renderInfo(app.round(req.ctx.round.id), { force: true })));
   link.get('/history', async (req, res) => res.json(await app.history(req.ctx)));
+  link.get('/history/:hash', async (req, res) => res.json(await app.historyDiff(req.ctx, req.params.hash)));
   r.use('/r/:token', link);
 
   // ---------------------------------------------------------------- rendered assets

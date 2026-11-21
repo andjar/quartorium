@@ -16,8 +16,13 @@ module.exports = {
   /** Identity used as committer for every commit Quartorium writes. */
   committerName: process.env.QUARTORIUM_COMMITTER_NAME || 'Quartorium',
   committerEmail: process.env.QUARTORIUM_COMMITTER_EMAIL || 'quartorium@localhost',
-  /** Seconds a draft must be idle before it is committed. */
-  commitIdleSeconds: Number(process.env.QUARTORIUM_COMMIT_IDLE || 60),
+  /** Seconds without typing after which a draft is committed (leaving the page commits at once). */
+  commitIdleSeconds: Number(process.env.QUARTORIUM_COMMIT_IDLE || 600),
+  /** Address people use to reach this server, for links in e-mails (e.g. https://review.example.org). */
+  publicUrl: (process.env.QUARTORIUM_PUBLIC_URL || '').replace(/\/$/, ''),
+  /** Optional mail server, e.g. smtp://user:pass@smtp.example.org:587. Unset: no e-mails are sent. */
+  smtpUrl: process.env.QUARTORIUM_SMTP_URL || '',
+  mailFrom: process.env.QUARTORIUM_MAIL_FROM || 'Quartorium <quartorium@localhost>',
   /** Set to "0" to never push to the remote (useful for trying things out). */
   push: process.env.QUARTORIUM_PUSH !== '0',
   renderTimeoutMs: Number(process.env.QUARTORIUM_RENDER_TIMEOUT || 15 * 60) * 1000,
