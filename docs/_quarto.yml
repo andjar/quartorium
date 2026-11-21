@@ -5,6 +5,7 @@ project:
 website:
   title: "Quartorium"
   description: "Review rounds for Quarto papers: send co-authors a link, keep the paper trail in Git."
+  site-url: https://andjar.github.io/quartorium/
   repo-url: https://github.com/andjar/quartorium
   repo-actions: [edit, issue]
   page-navigation: true

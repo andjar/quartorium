@@ -21,8 +21,9 @@ on any Git host (Codeberg, Forgejo, GitLab, GitHub, or a plain server).
 
 ## Documentation
 
-The full documentation is a Quarto website in [`docs/`](docs/). Preview it with
-`quarto preview docs`.
+Read the documentation at **<https://andjar.github.io/quartorium/>**. It's a Quarto website
+in [`docs/`](docs/), published by GitHub Actions on every change to main; preview it locally
+with `quarto preview docs`.
 
 - [Getting started](docs/getting-started.qmd): install, connect a repository, configuration
 - [User guide](docs/guide.qmd): for reviewers and lead authors, and [which Quarto features are supported](docs/guide.qmd#supported)
